@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:setup": "vitest run src/test/setup.test.ts"
   },
   "dependencies": {
     "next": "^15.0.0",
