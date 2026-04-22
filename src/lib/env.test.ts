@@ -1,6 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("loadEnv", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -20,5 +24,21 @@ describe("loadEnv", () => {
     expect(env.DATABASE_URL).toContain("postgresql://");
     expect(env.AUTH_SECRET).toBe("test-secret");
     expect(loadEnv()).toEqual(env);
+  });
+
+  it("rejects missing required values", async () => {
+    vi.stubEnv("DATABASE_URL", "postgresql://localhost:5432/portal");
+    vi.stubEnv("AUTH_SECRET", "test-secret");
+    vi.stubEnv("AUTH_MICROSOFT_ENTRA_ID_ID", "client-id");
+    vi.stubEnv("AUTH_MICROSOFT_ENTRA_ID_SECRET", "client-secret");
+    vi.stubEnv(
+      "AUTH_MICROSOFT_ENTRA_ID_ISSUER",
+      "https://login.microsoftonline.com/tenant/v2.0",
+    );
+
+    const { loadEnv } = await import("./env");
+
+    expect(() => loadEnv({ DATABASE_URL: "postgresql://localhost:5432/portal" }))
+      .toThrow();
   });
 });
