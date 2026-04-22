@@ -15,17 +15,10 @@ describe("loadEnv", () => {
       "https://login.microsoftonline.com/tenant/v2.0",
     );
 
-    const { loadEnv } = await import("./env");
-    const env = loadEnv({
-      DATABASE_URL: "postgresql://localhost:5432/portal",
-      AUTH_SECRET: "test-secret",
-      AUTH_MICROSOFT_ENTRA_ID_ID: "client-id",
-      AUTH_MICROSOFT_ENTRA_ID_SECRET: "client-secret",
-      AUTH_MICROSOFT_ENTRA_ID_ISSUER:
-        "https://login.microsoftonline.com/tenant/v2.0",
-    });
+    const { env, loadEnv } = await import("./env");
 
     expect(env.DATABASE_URL).toContain("postgresql://");
     expect(env.AUTH_SECRET).toBe("test-secret");
+    expect(loadEnv()).toEqual(env);
   });
 });
