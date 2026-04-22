@@ -26,5 +26,6 @@ describe("loadEnv", () => {
     });
 
     expect(env.DATABASE_URL).toContain("postgresql://");
+    expect(env.AUTH_SECRET).toBe("test-secret");
   });
 });

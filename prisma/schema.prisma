@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // DATABASE_URL is required for Prisma validation and runtime resolution.
   url      = env("DATABASE_URL")
 }
 
@@ -39,7 +40,6 @@ model AppRequest {
   appName          String
   submittedConfig  Json
   generationStatus GenerationStatus
-  artifactId       String?            @unique
   supportReference String
   visibility       String?
   deploymentTarget String?
@@ -48,7 +48,7 @@ model AppRequest {
   updatedAt        DateTime           @updatedAt
   user             User               @relation(fields: [userId], references: [id])
   template         Template           @relation(fields: [templateId], references: [id])
-  artifact         GeneratedArtifact? @relation(fields: [artifactId], references: [id])
+  artifact         GeneratedArtifact?
 }
 
 model GeneratedArtifact {
@@ -61,7 +61,7 @@ model GeneratedArtifact {
   sizeBytes    Int
   expiresAt    DateTime?
   createdAt    DateTime    @default(now())
-  appRequest   AppRequest?
+  appRequest   AppRequest   @relation(fields: [appRequestId], references: [id])
 }
 
 enum TemplateStatus {
