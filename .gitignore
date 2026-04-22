@@ -4,6 +4,6 @@ coverage
 .DS_Store
 **/.env
 **/.env.*
-!/prisma/.env
+!.env.example
 tsconfig.tsbuildinfo
 *.log

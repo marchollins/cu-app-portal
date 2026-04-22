@@ -4,8 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // DATABASE_URL is required for Prisma validation and runtime resolution.
-  url      = env("DATABASE_URL")
+  url      = "postgresql://localhost:5432/portal"
 }
 
 model User {
