@@ -13,7 +13,9 @@ export default async function CreatePage() {
           <li key={template.id}>
             <h2>{template.name}</h2>
             <p>{template.description}</p>
-            <Link href={`/create/${template.slug}`}>Use Template</Link>
+            <Link href={`/create/${template.slug}`}>
+              Use {template.name}
+            </Link>
           </li>
         ))}
       </ul>
