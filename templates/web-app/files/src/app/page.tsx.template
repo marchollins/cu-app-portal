@@ -1,0 +1,9 @@
+export default function HomePage() {
+  return (
+    <main>
+      <h1>{{APP_NAME}}</h1>
+      <p>{{APP_DESCRIPTION}}</p>
+      <p>Prepared for deployment to {{HOSTING_TARGET}}.</p>
+    </main>
+  );
+}

@@ -35,7 +35,7 @@ export function TemplateFormFields({ template }: { template: PortalTemplate }) {
               </label>
             );
           default:
-            throw new Error(`Unsupported template field type: ${field.type}`);
+            throw new Error("Unsupported template field type.");
         }
       })}
     </>

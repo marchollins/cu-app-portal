@@ -1,0 +1,10 @@
+{
+  "slug": "web-app",
+  "version": "1.0.0",
+  "entryFiles": [
+    "README.md.template",
+    "src/app/page.tsx.template",
+    "src/app/globals.css.template",
+    ".env.example.template"
+  ]
+}

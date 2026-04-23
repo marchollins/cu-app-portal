@@ -1,0 +1,13 @@
+# {{APP_NAME}}
+
+{{APP_DESCRIPTION}}
+
+## Hosting Target
+
+This starter is prepared for {{HOSTING_TARGET}}.
+
+## Next Steps
+
+1. Create a new GitHub repository for this project.
+2. Copy the generated files into that repository.
+3. Follow the Cedarville deployment instructions bundled with this package.

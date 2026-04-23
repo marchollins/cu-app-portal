@@ -1,0 +1,23 @@
+:root {
+  --cedarville-blue: #003a70;
+  --cedarville-gold: #c99700;
+  --cedarville-cream: #f7f3eb;
+  --cedarville-ink: #17202a;
+}
+
+body {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  background: linear-gradient(180deg, var(--cedarville-cream), #ffffff);
+  color: var(--cedarville-ink);
+}
+
+main {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+}
+
+h1 {
+  color: var(--cedarville-blue);
+}
