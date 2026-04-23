@@ -19,10 +19,11 @@ describe("authConfig", () => {
 
   it("uses jwt sessions and microsoft entra id provider", async () => {
     const { authConfig } = await import("./config");
-    const [provider] = authConfig.providers;
+    const config = await authConfig();
+    const [provider] = config.providers;
 
-    expect(authConfig.session?.strategy).toBe("jwt");
-    expect(authConfig.providers).toHaveLength(1);
+    expect(config.session?.strategy).toBe("jwt");
+    expect(config.providers).toHaveLength(1);
     expect(provider.id).toBe("microsoft-entra-id");
   });
 });
