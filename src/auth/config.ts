@@ -22,11 +22,35 @@ export async function authConfig() {
       }),
     ],
     callbacks: {
-      async signIn({ account, profile }) {
+      async signIn({ user, account, profile }) {
+        if (
+          typeof profile?.oid !== "string" ||
+          typeof user.email !== "string" ||
+          typeof user.name !== "string"
+        ) {
+          return false;
+        }
+
         try {
+          const { prisma } = await import("@/lib/db");
+          const syncedUser = await prisma.user.upsert({
+            where: { entraOid: profile.oid },
+            update: {
+              email: user.email,
+              displayName: user.name,
+            },
+            create: {
+              entraOid: profile.oid,
+              email: user.email,
+              displayName: user.name,
+            },
+          });
+
+          user.id = syncedUser.id;
+
           await recordAuditEvent("SIGN_IN", {
             provider: account?.provider ?? "microsoft-entra-id",
-            entraOid: typeof profile?.oid === "string" ? profile.oid : undefined,
+            entraOid: profile.oid,
           });
         } catch {
           // Audit is best-effort; auth should still succeed.
@@ -36,16 +60,22 @@ export async function authConfig() {
       async authorized({ auth }) {
         return !!auth?.user;
       },
-      async jwt({ token, profile }) {
+      async jwt({ token, profile, user }) {
         if (typeof profile?.oid === "string") {
           token.entraOid = profile.oid;
         }
+
+        if (typeof user?.id === "string") {
+          token.userId = user.id;
+          token.sub = user.id;
+        }
+
         return token;
       },
       async session({ session, token }) {
         if (session.user && token.entraOid) {
-          if (typeof token.sub === "string") {
-            session.user.id = token.sub;
+          if (typeof token.userId === "string") {
+            session.user.id = token.userId;
           }
 
           session.user.entraOid = token.entraOid;
