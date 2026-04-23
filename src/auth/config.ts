@@ -1,26 +1,19 @@
 import type { NextAuthConfig } from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
+import { env } from "@/lib/env";
 
 type JwtTokenWithEntraOid = {
   sub?: string;
   entraOid?: string;
 };
 
-const authEntraIdId =
-  process.env.AUTH_MICROSOFT_ENTRA_ID_ID ?? "placeholder-client-id";
-const authEntraIdSecret =
-  process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET ?? "placeholder-client-secret";
-const authEntraIdIssuer =
-  process.env.AUTH_MICROSOFT_ENTRA_ID_ISSUER ??
-  "https://login.microsoftonline.com/placeholder/v2.0";
-
 export const authConfig = {
   session: { strategy: "jwt" },
   providers: [
     MicrosoftEntraID({
-      clientId: authEntraIdId,
-      clientSecret: authEntraIdSecret,
-      issuer: authEntraIdIssuer,
+      clientId: env.AUTH_MICROSOFT_ENTRA_ID_ID,
+      clientSecret: env.AUTH_MICROSOFT_ENTRA_ID_SECRET,
+      issuer: env.AUTH_MICROSOFT_ENTRA_ID_ISSUER,
     }),
   ],
   callbacks: {
