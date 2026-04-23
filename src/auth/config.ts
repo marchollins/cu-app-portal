@@ -21,6 +21,9 @@ export async function authConfig() {
       }),
     ],
     callbacks: {
+      async authorized({ auth }) {
+        return !!auth?.user;
+      },
       async jwt({ token, profile }) {
         if (typeof profile?.oid === "string") {
           token.entraOid = profile.oid;
