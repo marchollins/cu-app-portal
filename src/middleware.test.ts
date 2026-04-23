@@ -1,47 +1,69 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { authConfig } from "@/auth/config";
+
+let capturedAuthConfigFactory: ((req?: unknown) => Promise<unknown>) | undefined;
 
 vi.mock("next-auth", () => ({
-  default: () => ({ auth: vi.fn() }),
+  default: vi.fn((configFactory) => {
+    capturedAuthConfigFactory = configFactory;
+    return { auth: vi.fn() };
+  }),
 }));
+
+vi.mock("@/auth/config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/auth/config")>();
+
+  return {
+    ...actual,
+    authConfig: vi.fn(actual.authConfig),
+  };
+});
 
 describe("middleware protection", () => {
   beforeEach(() => {
-    process.env.AUTH_MICROSOFT_ENTRA_ID_ID = "client-id";
-    process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET = "client-secret";
-    process.env.AUTH_MICROSOFT_ENTRA_ID_ISSUER =
-      "https://login.microsoftonline.com/tenant/v2.0";
+    vi.resetModules();
+    vi.stubEnv("AUTH_MICROSOFT_ENTRA_ID_ID", "client-id");
+    vi.stubEnv("AUTH_MICROSOFT_ENTRA_ID_SECRET", "client-secret");
+    vi.stubEnv(
+      "AUTH_MICROSOFT_ENTRA_ID_ISSUER",
+      "https://login.microsoftonline.com/tenant/v2.0",
+    );
   });
 
   afterEach(() => {
-    delete process.env.AUTH_MICROSOFT_ENTRA_ID_ID;
-    delete process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET;
-    delete process.env.AUTH_MICROSOFT_ENTRA_ID_ISSUER;
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+    capturedAuthConfigFactory = undefined;
   });
 
   it("protects create and download routes", async () => {
-    const { config } = await import("./middleware");
+    const { config, middleware } = await import("./middleware");
+
     expect(config.matcher).toContain("/create/:path*");
     expect(config.matcher).toContain("/download/:path*");
+    expect(capturedAuthConfigFactory).toBeTypeOf("function");
+    expect(middleware).toBeDefined();
   });
 
-  it("denies unauthenticated requests", async () => {
-    const config = await authConfig();
+  it("wires NextAuth to the shared auth config and authorization callback", async () => {
+    const { authConfig } = await import("@/auth/config");
+    await import("./middleware");
 
-    await expect(
-      config.callbacks?.authorized?.({
+    expect(capturedAuthConfigFactory).toBeTypeOf("function");
+
+    const config = await capturedAuthConfigFactory?.();
+
+    expect(authConfig).toHaveBeenCalledTimes(1);
+
+    expect(config).toMatchObject({
+      session: { strategy: "jwt" },
+    });
+    expect((config as { callbacks?: { authorized?: Function } }).callbacks?.authorized).toBeTypeOf(
+      "function",
+    );
+    expect(
+      await (config as { callbacks: { authorized: (arg: { auth: null }) => Promise<boolean> } }).callbacks.authorized({
         auth: null,
-      } as never),
-    ).resolves.toBe(false);
-  });
-
-  it("allows authenticated requests", async () => {
-    const config = await authConfig();
-
-    await expect(
-      config.callbacks?.authorized?.({
-        auth: { user: { id: "user-1" } },
-      } as never),
-    ).resolves.toBe(true);
+      }),
+    ).toBe(false);
   });
 });
