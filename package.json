@@ -9,7 +9,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:setup": "vitest run src/test/setup.test.ts",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs postgres"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
