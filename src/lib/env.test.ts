@@ -26,7 +26,7 @@ describe("loadEnv", () => {
     expect(loadEnv()).toEqual(env);
   });
 
-  it("rejects missing required values", async () => {
+  it("rejects invalid database urls", async () => {
     vi.stubEnv("DATABASE_URL", "postgresql://localhost:5432/portal");
     vi.stubEnv("AUTH_SECRET", "test-secret");
     vi.stubEnv("AUTH_MICROSOFT_ENTRA_ID_ID", "client-id");
@@ -38,7 +38,7 @@ describe("loadEnv", () => {
 
     const { loadEnv } = await import("./env");
 
-    expect(() => loadEnv({ DATABASE_URL: "postgresql://localhost:5432/portal" }))
+    expect(() => loadEnv({ DATABASE_URL: "not-a-url" }))
       .toThrow();
   });
 });
