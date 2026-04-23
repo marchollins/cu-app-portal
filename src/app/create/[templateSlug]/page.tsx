@@ -11,7 +11,7 @@ export default async function TemplatePage({
   const { templateSlug } = await params;
   const template = getTemplateBySlug(templateSlug);
 
-  if (!template) {
+  if (!template || template.status !== "ACTIVE") {
     notFound();
   }
 

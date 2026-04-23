@@ -5,37 +5,38 @@ export function TemplateFormFields({ template }: { template: PortalTemplate }) {
   return (
     <>
       {template.fields.map((field) => {
-        if (field.type === "textarea") {
-          return (
-            <label key={field.name}>
-              {field.label}
-              <textarea name={field.name} required={field.required} />
-            </label>
-          );
+        switch (field.type) {
+          case "text":
+            return (
+              <label key={field.name}>
+                {field.label}
+                <input name={field.name} type="text" required={field.required} />
+              </label>
+            );
+          case "textarea":
+            return (
+              <label key={field.name}>
+                {field.label}
+                <textarea name={field.name} required={field.required} />
+              </label>
+            );
+          case "select":
+            return (
+              <label key={field.name}>
+                {field.label}
+                <select name={field.name} required={field.required}>
+                  <option value="">Select an option</option>
+                  {field.options.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            );
+          default:
+            throw new Error(`Unsupported template field type: ${field.type}`);
         }
-
-        if (field.type === "select") {
-          return (
-            <label key={field.name}>
-              {field.label}
-              <select name={field.name} required={field.required}>
-                <option value="">Select an option</option>
-                {field.options.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-          );
-        }
-
-        return (
-          <label key={field.name}>
-            {field.label}
-            <input name={field.name} type="text" required={field.required} />
-          </label>
-        );
       })}
     </>
   );
