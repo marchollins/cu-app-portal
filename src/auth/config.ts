@@ -23,10 +23,14 @@ export async function authConfig() {
     ],
     callbacks: {
       async signIn({ account, profile }) {
-        await recordAuditEvent("SIGN_IN", {
-          provider: account?.provider ?? "microsoft-entra-id",
-          entraOid: typeof profile?.oid === "string" ? profile.oid : undefined,
-        });
+        try {
+          await recordAuditEvent("SIGN_IN", {
+            provider: account?.provider ?? "microsoft-entra-id",
+            entraOid: typeof profile?.oid === "string" ? profile.oid : undefined,
+          });
+        } catch {
+          // Audit is best-effort; auth should still succeed.
+        }
         return true;
       },
       async authorized({ auth }) {

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const recordAuditEventMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/audit", () => ({
+  recordAuditEvent: recordAuditEventMock,
+}));
+
 describe("authConfig", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -15,6 +21,7 @@ describe("authConfig", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    recordAuditEventMock.mockReset();
   });
 
   it("uses jwt sessions and microsoft entra id provider", async () => {
@@ -44,5 +51,19 @@ describe("authConfig", () => {
 
     expect(session?.user?.id).toBeUndefined();
     expect(session?.user?.entraOid).toBe("entra-oid");
+  });
+
+  it("keeps sign-in successful when audit logging fails", async () => {
+    recordAuditEventMock.mockRejectedValueOnce(new Error("audit sink down"));
+
+    const { authConfig } = await import("./config");
+    const config = await authConfig();
+
+    await expect(
+      config.callbacks?.signIn?.({
+        account: { provider: "microsoft-entra-id" },
+        profile: { oid: "entra-oid" },
+      } as never),
+    ).resolves.toBe(true);
   });
 });
