@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
+import { recordAuditEvent } from "@/lib/audit";
 import { z } from "zod";
 
 const authEnvSchema = z.object({
@@ -21,6 +22,13 @@ export async function authConfig() {
       }),
     ],
     callbacks: {
+      async signIn({ account, profile }) {
+        await recordAuditEvent("SIGN_IN", {
+          provider: account?.provider ?? "microsoft-entra-id",
+          entraOid: typeof profile?.oid === "string" ? profile.oid : undefined,
+        });
+        return true;
+      },
       async authorized({ auth }) {
         return !!auth?.user;
       },
