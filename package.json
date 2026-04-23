@@ -8,7 +8,8 @@
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:setup": "vitest run src/test/setup.test.ts"
+    "test:setup": "vitest run src/test/setup.test.ts",
+    "prisma:generate": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
