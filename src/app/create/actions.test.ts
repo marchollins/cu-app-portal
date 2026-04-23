@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getServerSession } from "@/auth/session";
 import { buildArchive } from "@/features/generation/build-archive";
 import { saveArtifact } from "@/features/generation/storage";
 import { prisma } from "@/lib/db";
@@ -23,8 +24,18 @@ vi.mock("@/lib/audit", () => ({
   recordAuditEvent: vi.fn(),
 }));
 
+vi.mock("@/auth/session", () => ({
+  getServerSession: vi.fn(),
+}));
+
 vi.mock("@/lib/db", () => ({
   prisma: {
+    user: {
+      upsert: vi.fn(),
+    },
+    template: {
+      upsert: vi.fn(),
+    },
     appRequest: {
       create: vi.fn(),
       update: vi.fn(),
@@ -41,6 +52,9 @@ describe("extractCreateAppInput", () => {
     vi.mocked(buildArchive).mockReset();
     vi.mocked(saveArtifact).mockReset();
     vi.mocked(recordAuditEvent).mockReset();
+    vi.mocked(getServerSession).mockReset();
+    vi.mocked(prisma.user.upsert).mockReset();
+    vi.mocked(prisma.template.upsert).mockReset();
     vi.mocked(prisma.appRequest.create).mockReset();
     vi.mocked(prisma.appRequest.update).mockReset();
     vi.mocked(prisma.generatedArtifact.create).mockReset();
@@ -80,6 +94,12 @@ describe("createAppAction", () => {
     formData.set("description", "Shows campus metrics.");
     formData.set("hostingTarget", "Vercel");
 
+    vi.mocked(getServerSession).mockResolvedValue({
+      user: { id: "user-123" },
+    } as Awaited<ReturnType<typeof getServerSession>>);
+    vi.mocked(prisma.template.upsert).mockResolvedValue({
+      id: "template-db-123",
+    } as Awaited<ReturnType<typeof prisma.template.upsert>>);
     vi.mocked(prisma.appRequest.create).mockResolvedValue({
       id: "request-123",
     } as Awaited<ReturnType<typeof prisma.appRequest.create>>);
@@ -106,6 +126,7 @@ describe("createAppAction", () => {
       "campus-dashboard.zip",
       Buffer.from("zip"),
     );
+    expect(prisma.template.upsert).toHaveBeenCalled();
     expect(prisma.appRequest.create).toHaveBeenCalled();
     expect(prisma.generatedArtifact.create).toHaveBeenCalled();
     expect(prisma.appRequest.update).toHaveBeenCalledWith({
@@ -126,6 +147,12 @@ describe("createAppAction", () => {
     formData.set("description", "Shows campus metrics.");
     formData.set("hostingTarget", "Vercel");
 
+    vi.mocked(getServerSession).mockResolvedValue({
+      user: { id: "user-123" },
+    } as Awaited<ReturnType<typeof getServerSession>>);
+    vi.mocked(prisma.template.upsert).mockResolvedValue({
+      id: "template-db-123",
+    } as Awaited<ReturnType<typeof prisma.template.upsert>>);
     vi.mocked(prisma.appRequest.create).mockResolvedValue({
       id: "request-456",
     } as Awaited<ReturnType<typeof prisma.appRequest.create>>);
@@ -142,6 +169,45 @@ describe("createAppAction", () => {
       expect.objectContaining({
         requestId: "request-456",
         error: "zip failed",
+      }),
+    );
+  });
+
+  it("uses a fallback e2e user when auth bypass is enabled", async () => {
+    vi.stubEnv("E2E_AUTH_BYPASS", "true");
+
+    const formData = new FormData();
+    formData.set("templateSlug", "web-app");
+    formData.set("appName", "Campus Dashboard");
+    formData.set("description", "Shows campus metrics.");
+    formData.set("hostingTarget", "Vercel");
+
+    vi.mocked(getServerSession).mockResolvedValue(null);
+    vi.mocked(prisma.user.upsert).mockResolvedValue({
+      id: "e2e-user-123",
+    } as Awaited<ReturnType<typeof prisma.user.upsert>>);
+    vi.mocked(prisma.template.upsert).mockResolvedValue({
+      id: "template-db-123",
+    } as Awaited<ReturnType<typeof prisma.template.upsert>>);
+    vi.mocked(prisma.appRequest.create).mockResolvedValue({
+      id: "request-789",
+    } as Awaited<ReturnType<typeof prisma.appRequest.create>>);
+    vi.mocked(buildArchive).mockResolvedValue({
+      buffer: Buffer.from("zip"),
+      filename: "campus-dashboard.zip",
+    });
+    vi.mocked(saveArtifact).mockResolvedValue(
+      "/tmp/.artifacts/campus-dashboard.zip",
+    );
+
+    await createAppAction(formData);
+
+    expect(prisma.user.upsert).toHaveBeenCalled();
+    expect(prisma.appRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          userId: "e2e-user-123",
+        }),
       }),
     );
   });

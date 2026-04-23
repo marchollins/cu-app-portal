@@ -1,17 +1,12 @@
 import { pathToFileURL } from "node:url";
 import { prisma } from "../src/lib/db";
-import { getActiveTemplates } from "../src/features/templates/catalog";
+import {
+  getActiveTemplates,
+  serializeTemplateForStorage,
+} from "../src/features/templates/catalog";
 
 export function seedTemplates() {
-  return getActiveTemplates().map((template) => ({
-    slug: template.slug,
-    name: template.name,
-    description: template.description,
-    version: template.version,
-    status: template.status,
-    inputSchema: template.fields,
-    hostingOptions: [],
-  }));
+  return getActiveTemplates().map(serializeTemplateForStorage);
 }
 
 export async function main() {

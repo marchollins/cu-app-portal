@@ -79,6 +79,20 @@ describe("authConfig", () => {
     ).resolves.toBe(true);
   });
 
+  it("allows authorized requests in e2e bypass mode", async () => {
+    vi.unstubAllEnvs();
+    vi.stubEnv("E2E_AUTH_BYPASS", "true");
+
+    const { authConfig } = await import("./config");
+    const config = await authConfig();
+
+    await expect(
+      config.callbacks?.authorized?.({
+        auth: null,
+      } as never),
+    ).resolves.toBe(true);
+  });
+
   it("syncs authenticated users into the local database", async () => {
     prismaUserUpsertMock.mockResolvedValueOnce({ id: "user-123" });
 

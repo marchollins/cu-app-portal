@@ -9,7 +9,32 @@ const authEnvSchema = z.object({
   AUTH_MICROSOFT_ENTRA_ID_ISSUER: z.string().url(),
 });
 
+function isE2EAuthBypassEnabled() {
+  return process.env.E2E_AUTH_BYPASS === "true";
+}
+
 export async function authConfig() {
+  if (isE2EAuthBypassEnabled()) {
+    return {
+      session: { strategy: "jwt" },
+      providers: [],
+      callbacks: {
+        async signIn() {
+          return true;
+        },
+        async authorized() {
+          return true;
+        },
+        async jwt({ token }) {
+          return token;
+        },
+        async session({ session }) {
+          return session;
+        },
+      },
+    } satisfies NextAuthConfig;
+  }
+
   const authEnv = authEnvSchema.parse(process.env);
 
   return {
@@ -58,7 +83,7 @@ export async function authConfig() {
         return true;
       },
       async authorized({ auth }) {
-        return !!auth?.user;
+        return isE2EAuthBypassEnabled() || !!auth?.user;
       },
       async jwt({ token, profile, user }) {
         if (typeof profile?.oid === "string") {

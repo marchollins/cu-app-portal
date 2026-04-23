@@ -39,3 +39,15 @@ export function getActiveTemplateBySlug(slug: string) {
 export function getTemplateBySlug(slug: string) {
   return templates.find((template) => template.slug === slug) ?? null;
 }
+
+export function serializeTemplateForStorage(template: PortalTemplate) {
+  return {
+    slug: template.slug,
+    name: template.name,
+    description: template.description,
+    version: template.version,
+    status: template.status,
+    inputSchema: template.fields,
+    hostingOptions: [],
+  };
+}

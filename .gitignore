@@ -8,3 +8,5 @@ coverage
 tsconfig.tsbuildinfo
 tsconfig.next.tsbuildinfo
 *.log
+.artifacts
+test-results
