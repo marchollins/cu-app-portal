@@ -1,10 +1,22 @@
 import React from "react";
+import Link from "next/link";
+import { getActiveTemplates } from "@/features/templates/catalog";
 
-export default function CreatePage() {
+export default async function CreatePage() {
+  const templates = getActiveTemplates();
+
   return (
     <main>
       <h1>Create New App</h1>
-      <p>Template selection will be added in a later task.</p>
+      <ul>
+        {templates.map((template) => (
+          <li key={template.id}>
+            <h2>{template.name}</h2>
+            <p>{template.description}</p>
+            <Link href={`/create/${template.slug}`}>Use Template</Link>
+          </li>
+        ))}
+      </ul>
     </main>
   );
 }
