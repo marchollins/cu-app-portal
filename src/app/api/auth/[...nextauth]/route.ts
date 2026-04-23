@@ -1,0 +1,8 @@
+import NextAuth from "next-auth";
+import { authConfig } from "@/auth/config";
+
+export const dynamic = "force-dynamic";
+
+const { handlers } = NextAuth(authConfig);
+
+export const { GET, POST } = handlers;
