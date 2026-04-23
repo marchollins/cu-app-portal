@@ -17,5 +17,9 @@ test("authenticated user can create an app package", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: /your app package is ready/i }),
   ).toBeVisible();
-  await expect(page.getByRole("link", { name: /download zip/i })).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: /download zip/i }).click();
+  const download = await downloadPromise;
+
+  expect(download.suggestedFilename()).toBe("campus-dashboard.zip");
 });
