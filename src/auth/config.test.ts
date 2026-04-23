@@ -33,4 +33,16 @@ describe("authConfig", () => {
 
     await expect(import("./config")).resolves.toBeDefined();
   });
+
+  it("leaves session user id undefined when token.sub is missing", async () => {
+    const { authConfig } = await import("./config");
+    const config = await authConfig();
+    const session = await config.callbacks?.session?.({
+      session: { user: {} },
+      token: { entraOid: "entra-oid" },
+    } as never);
+
+    expect(session?.user?.id).toBeUndefined();
+    expect(session?.user?.entraOid).toBe("entra-oid");
+  });
 });
