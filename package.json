@@ -12,6 +12,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "db:up": "docker compose up -d postgres",
+    "db:reset": "docker compose down -v",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs postgres"
   },

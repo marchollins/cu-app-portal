@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { prisma } from "./db";
+import { describe, expect, it, vi } from "vitest";
 
 describe("prisma", () => {
-  it("exports a prisma client instance", () => {
-    expect(prisma).toBeDefined();
-    expect(typeof prisma.$connect).toBe("function");
+  it("reuses the prisma client across module reloads", async () => {
+    vi.resetModules();
+
+    const first = (await import("./db")).prisma;
+    vi.resetModules();
+    const second = (await import("./db")).prisma;
+
+    expect(second).toBe(first);
   });
 });
