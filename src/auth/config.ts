@@ -1,11 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 
-type JwtTokenWithEntraOid = {
-  sub?: string;
-  entraOid?: string;
-};
-
 export async function authConfig() {
   const { env } = await import("@/lib/env");
 
@@ -20,20 +15,18 @@ export async function authConfig() {
     ],
     callbacks: {
       async jwt({ token, profile }) {
-        if (profile?.oid) {
-          (token as JwtTokenWithEntraOid).entraOid = String(profile.oid);
+        if (typeof profile?.oid === "string") {
+          token.entraOid = profile.oid;
         }
         return token;
       },
       async session({ session, token }) {
-        if (session.user && (token as JwtTokenWithEntraOid).entraOid) {
-          const user = session.user as typeof session.user & {
-            id: string;
-            entraOid: string;
-          };
+        if (session.user && token.entraOid) {
+          if (typeof token.sub === "string") {
+            session.user.id = token.sub;
+          }
 
-          user.id = String(token.sub);
-          user.entraOid = String((token as JwtTokenWithEntraOid).entraOid);
+          session.user.entraOid = token.entraOid;
         }
         return session;
       },

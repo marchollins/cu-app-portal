@@ -26,4 +26,11 @@ describe("authConfig", () => {
     expect(config.providers).toHaveLength(1);
     expect(provider.id).toBe("microsoft-entra-id");
   });
+
+  it("can be imported without auth env variables", async () => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+
+    await expect(import("./config")).resolves.toBeDefined();
+  });
 });
