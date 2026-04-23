@@ -12,7 +12,7 @@
     "test:e2e": "playwright test",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:seed": "node --env-file=.env --env-file-if-exists=.env.local --import tsx prisma/seed.ts",
     "db:up": "docker compose up -d postgres",
     "db:reset": "docker compose down -v",
     "db:down": "docker compose down",
