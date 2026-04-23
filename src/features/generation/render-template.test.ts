@@ -16,14 +16,16 @@ describe("buildTokenMap", () => {
   it("builds template token replacements from app input", () => {
     const tokens = buildTokenMap({
       templateSlug: "web-app",
-      appName: "Campus Dashboard",
-      description: "Shows campus metrics.",
+      appName: "Campus <Beta>",
+      description: 'Tracks {housing} and "retention".',
       hostingTarget: "Vercel",
     });
 
     expect(tokens).toEqual({
-      APP_NAME: "Campus Dashboard",
-      APP_DESCRIPTION: "Shows campus metrics.",
+      APP_NAME: "Campus <Beta>",
+      APP_NAME_JS: '"Campus <Beta>"',
+      APP_DESCRIPTION: 'Tracks {housing} and "retention".',
+      APP_DESCRIPTION_JS: '"Tracks {housing} and \\"retention\\"."',
       HOSTING_TARGET: "Vercel",
     });
   });

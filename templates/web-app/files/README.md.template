@@ -10,4 +10,4 @@ This starter is prepared for {{HOSTING_TARGET}}.
 
 1. Create a new GitHub repository for this project.
 2. Copy the generated files into that repository.
-3. Follow the Cedarville deployment instructions bundled with this package.
+3. Follow `docs/github-setup.md` and `docs/deployment-guide.md` in this package.
