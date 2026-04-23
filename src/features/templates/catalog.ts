@@ -32,6 +32,10 @@ export function getActiveTemplates() {
   return templates.filter((template) => template.status === "ACTIVE");
 }
 
+export function getActiveTemplateBySlug(slug: string) {
+  return getActiveTemplates().find((template) => template.slug === slug) ?? null;
+}
+
 export function getTemplateBySlug(slug: string) {
   return templates.find((template) => template.slug === slug) ?? null;
 }

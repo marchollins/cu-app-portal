@@ -6,19 +6,19 @@ const mockNotFound = vi.hoisted(() => vi.fn(() => {
   throw new Error("notFound");
 }));
 
-const mockGetTemplateBySlug = vi.hoisted(() => vi.fn());
+const mockGetActiveTemplateBySlug = vi.hoisted(() => vi.fn());
 
 vi.mock("next/navigation", () => ({
   notFound: mockNotFound,
 }));
 
 vi.mock("@/features/templates/catalog", () => ({
-  getTemplateBySlug: mockGetTemplateBySlug,
+  getActiveTemplateBySlug: mockGetActiveTemplateBySlug,
 }));
 
 describe("TemplatePage", () => {
   it("renders the selected template form", async () => {
-    mockGetTemplateBySlug.mockReturnValue({
+    mockGetActiveTemplateBySlug.mockReturnValue({
       id: "web-app-v1",
       slug: "web-app",
       name: "Web App Starter",
@@ -43,15 +43,7 @@ describe("TemplatePage", () => {
   });
 
   it("treats disabled templates as not found", async () => {
-    mockGetTemplateBySlug.mockReturnValue({
-      id: "legacy-web-app",
-      slug: "legacy-web-app",
-      name: "Legacy Web App",
-      description: "Deprecated template.",
-      version: "0.9.0",
-      status: "DISABLED",
-      fields: [],
-    });
+    mockGetActiveTemplateBySlug.mockReturnValue(null);
 
     await expect(
       TemplatePage({
@@ -61,7 +53,7 @@ describe("TemplatePage", () => {
   });
 
   it("treats unknown templates as not found", async () => {
-    mockGetTemplateBySlug.mockReturnValue(null);
+    mockGetActiveTemplateBySlug.mockReturnValue(null);
 
     await expect(
       TemplatePage({
