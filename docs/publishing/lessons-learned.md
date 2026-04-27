@@ -43,3 +43,13 @@ Use this file to capture the operational details that make the next publish easi
 - The first zip deployment failed because the SCM container restarted while App Service configuration changes were still being applied. Azure reported: deployment stopped due to SCM container restart caused by a management operation in quick succession.
 - Retrying the zip deployment after configuration settled avoided the SCM-restart error, but the deployment remained in the `Running oryx build...` phase for an extended period and the public site still timed out.
 - Practical lesson: finish all App Service configuration first, then start deployment as a separate step. If Oryx appears stuck for a long time, the next diagnostic step should be deeper SCM/Kudu build log inspection or a shift to a prebuilt artifact deployment path.
+
+## 2026-04-27 Current Baseline
+
+- The portal is minimally working on Azure App Service at `https://cu-app-portal.azurewebsites.net`.
+- The live app now uses Azure PostgreSQL, `AUTH_URL`, and `NEXTAUTH_URL`, and the Microsoft Entra redirect host no longer falls back to `localhost`.
+- The Microsoft Entra app registration now includes both the local callback URI and the Azure App Service callback URI.
+- GitHub Actions is the preferred deployment path, with GitHub building the artifact and Azure running it.
+- The App Service plan was resized from `S1` to `B1` to reduce cost, while keeping the same plan resource name.
+- Remaining production caveat: Chrome Safe Browsing may still distrust the default `*.azurewebsites.net` hostname even when the app and auth flow are configured correctly.
+- Recommended follow-up: move production to a custom domain with TLS, then update `AUTH_URL`, `NEXTAUTH_URL`, and the Microsoft Entra redirect URI to that custom hostname.

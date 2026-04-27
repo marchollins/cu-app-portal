@@ -47,8 +47,19 @@ describe("buildDeploymentManifest", () => {
         },
         production: {
           databaseUrlAppSetting: "DATABASE_URL",
+          authUrlAppSetting: "AUTH_URL",
+          nextauthUrlAppSetting: "NEXTAUTH_URL",
         },
       },
+      applicationSettings: [
+        "DATABASE_URL",
+        "AUTH_URL",
+        "NEXTAUTH_URL",
+        "AUTH_SECRET",
+        "AUTH_MICROSOFT_ENTRA_ID_ID",
+        "AUTH_MICROSOFT_ENTRA_ID_SECRET",
+        "AUTH_MICROSOFT_ENTRA_ID_ISSUER",
+      ],
       automation: {
         skillPath: ".codex/skills/publish-to-azure/SKILL.md",
       },
@@ -99,8 +110,19 @@ describe("buildDeploymentManifest", () => {
         },
         production: {
           databaseUrlAppSetting: "DATABASE_URL",
+          authUrlAppSetting: "AUTH_URL",
+          nextauthUrlAppSetting: "NEXTAUTH_URL",
         },
       },
+      applicationSettings: [
+        "DATABASE_URL",
+        "AUTH_URL",
+        "NEXTAUTH_URL",
+        "AUTH_SECRET",
+        "AUTH_MICROSOFT_ENTRA_ID_ID",
+        "AUTH_MICROSOFT_ENTRA_ID_SECRET",
+        "AUTH_MICROSOFT_ENTRA_ID_ISSUER",
+      ],
       automation: {
         skillPath: ".codex/skills/publish-to-azure/SKILL.md",
       },

@@ -9,14 +9,15 @@ This bundle supports one first-class publishing path for `{{APP_NAME}}`: GitHub 
 3. Create the Azure Database for PostgreSQL flexible server and the production database named in the manifest.
 4. Keep local development on the localhost `DATABASE_URL` from `.env.example`.
 5. Set the App Service `DATABASE_URL` app setting to the Azure PostgreSQL connection string with `sslmode=require`.
-6. Use `.codex/skills/publish-to-azure/SKILL.md` to drive the publish flow when automation is available.
-7. Configure GitHub Actions Azure authentication with OpenID Connect.
-8. Add these GitHub repository secrets:
+6. Set both `AUTH_URL` and `NEXTAUTH_URL` to the public site origin, for example `https://{{APP_NAME_SLUG}}.azurewebsites.net`, so Auth.js does not fall back to `localhost`.
+7. Use `.codex/skills/publish-to-azure/SKILL.md` to drive the publish flow when automation is available.
+8. Configure GitHub Actions Azure authentication with OpenID Connect.
+9. Add these GitHub repository secrets:
    - `AZURE_CLIENT_ID`
    - `AZURE_TENANT_ID`
    - `AZURE_SUBSCRIPTION_ID`
-9. Trigger the workflow and verify the deployment in Azure App Service.
-10. Let GitHub Actions build the deployment package and send the built artifact to Azure App Service.
+10. Trigger the workflow and verify the deployment in Azure App Service.
+11. Let GitHub Actions build the deployment package and send the built artifact to Azure App Service.
 
 ## Fallback Path
 
@@ -25,10 +26,11 @@ If automation is blocked, complete the publish manually with the same manifest a
 1. Create the Azure resource group, PostgreSQL flexible server, and PostgreSQL database.
 2. Build the production `DATABASE_URL` from the Azure database credentials.
 3. Save `DATABASE_URL` in the Azure App Service app settings.
-4. Create or select the Azure identity used by GitHub Actions.
-5. Add the Azure identity secrets to GitHub.
-6. Push to `main` or trigger the workflow manually.
-7. Record any manual changes or blockers in `docs/publishing/lessons-learned.md`.
+4. Save `AUTH_URL` and `NEXTAUTH_URL` in the Azure App Service app settings using the public Azure hostname.
+5. Create or select the Azure identity used by GitHub Actions.
+6. Add the Azure identity secrets to GitHub.
+7. Push to `main` or trigger the workflow manually.
+8. Record any manual changes or blockers in `docs/publishing/lessons-learned.md`.
 
 ## GitHub CLI Shortcut
 
@@ -52,5 +54,6 @@ gh workflow run deploy-azure-app-service.yml
 
 - Treat this path as the supported default even if the original hosting choice needs to expand later.
 - Keep production `DATABASE_URL` in Azure App Service settings and keep development `.env.example` on localhost.
+- Set both `AUTH_URL` and `NEXTAUTH_URL` to the public Azure hostname in production so Auth.js does not generate `localhost` sign-in URLs.
 - Prefer updating the generated workflow and manifest instead of creating parallel deployment instructions.
 - Prefer GitHub Actions to build the deployment package and keep Azure focused on running the artifact.

@@ -9,20 +9,23 @@ This repository supports one first-class publishing path: GitHub Actions plus Az
 3. Create the Azure resource group, Azure Database for PostgreSQL flexible server, and PostgreSQL database named in the manifest.
 4. Configure these App Service application settings:
    - `DATABASE_URL`
+   - `AUTH_URL`
+   - `NEXTAUTH_URL`
    - `AUTH_SECRET`
    - `AUTH_MICROSOFT_ENTRA_ID_ID`
    - `AUTH_MICROSOFT_ENTRA_ID_SECRET`
    - `AUTH_MICROSOFT_ENTRA_ID_ISSUER`
 5. Keep local development on the localhost `DATABASE_URL` from `.env`.
 6. Set the App Service `DATABASE_URL` app setting to the Azure PostgreSQL connection string with `sslmode=require`.
-7. Set the startup command in Azure App Service to `npm run prisma:migrate:deploy && npm start`.
-8. Configure GitHub Actions Azure authentication with OpenID Connect.
-9. Add these GitHub repository secrets:
+7. Set both `AUTH_URL` and `NEXTAUTH_URL` to the public site origin, for example `https://cu-app-portal.azurewebsites.net`, so Auth.js does not fall back to `localhost`.
+8. Set the startup command in Azure App Service to `npm run prisma:migrate:deploy && npm start`.
+9. Configure GitHub Actions Azure authentication with OpenID Connect.
+10. Add these GitHub repository secrets:
    - `AZURE_CLIENT_ID`
    - `AZURE_TENANT_ID`
    - `AZURE_SUBSCRIPTION_ID`
-10. Push to `main` or run the GitHub Actions workflow manually.
-11. Let GitHub Actions build the deployment package and send the built artifact to Azure App Service.
+11. Push to `main` or run the GitHub Actions workflow manually.
+12. Let GitHub Actions build the deployment package and send the built artifact to Azure App Service.
 
 ## Recommended Azure CLI Shape
 
@@ -47,6 +50,8 @@ az webapp config appsettings set \
   --name cu-app-portal \
   --settings \
   DATABASE_URL="postgresql://portaladmin:replace-me@psql-cu-app-portal-260424.postgres.database.azure.com:5432/cu-app-portal?sslmode=require" \
+  AUTH_URL="https://cu-app-portal.azurewebsites.net" \
+  NEXTAUTH_URL="https://cu-app-portal.azurewebsites.net" \
   AUTH_SECRET="replace-me" \
   AUTH_MICROSOFT_ENTRA_ID_ID="replace-me" \
   AUTH_MICROSOFT_ENTRA_ID_SECRET="replace-me" \
@@ -86,5 +91,7 @@ After deployment:
 - This path prefers OpenID Connect for GitHub Actions and only falls back to publish-profile auth if OIDC cannot be used.
 - The repo includes `package-lock.json`, so the workflow uses `npm ci`.
 - The workflow deploys a built package from GitHub Actions so App Service does not need to Oryx-build the source repository on every release.
+- Set both `AUTH_URL` and `NEXTAUTH_URL` to the public Azure hostname in production so Auth.js does not generate `localhost` sign-in URLs.
+- Minimal working baseline: the default `*.azurewebsites.net` hostname can work, but a custom production domain may still be needed if Chrome Safe Browsing distrusts the shared Azure hostname.
 - Keep the production `DATABASE_URL` only in Azure App Service settings and keep local development on localhost.
 - If deployment is blocked, record the exact failure in `docs/publishing/lessons-learned.md`.

@@ -39,11 +39,15 @@
       "databaseUrl": "postgresql://portal:portal@localhost:5432/portal?schema=public"
     },
     "production": {
-      "databaseUrlAppSetting": "DATABASE_URL"
+      "databaseUrlAppSetting": "DATABASE_URL",
+      "authUrlAppSetting": "AUTH_URL",
+      "nextauthUrlAppSetting": "NEXTAUTH_URL"
     }
   },
   "applicationSettings": [
     "DATABASE_URL",
+    "AUTH_URL",
+    "NEXTAUTH_URL",
     "AUTH_SECRET",
     "AUTH_MICROSOFT_ENTRA_ID_ID",
     "AUTH_MICROSOFT_ENTRA_ID_SECRET",
