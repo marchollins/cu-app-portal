@@ -18,7 +18,7 @@ Use this skill to publish the Cedarville App Portal to Azure App Service through
 7. Set the App Service `DATABASE_URL` app setting to the Azure database connection string while leaving local development on localhost.
 8. Create or verify the App Service plan and web app described by the manifest.
 9. Configure the remaining application settings documented in `docs/publishing/azure-app-service.md`.
-10. Wire the `AZURE_WEBAPP_PUBLISH_PROFILE` repository secret expected by `.github/workflows/deploy-azure-app-service.yml`.
+10. Prefer OpenID Connect for GitHub Actions by wiring `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` for `.github/workflows/deploy-azure-app-service.yml`.
 11. Prefer the GitHub Actions workflow to build the deployable package and send the built artifact to Azure App Service instead of relying on App Service to Oryx-build the raw repository.
 12. Run the safest available verification after wiring deployment and report what succeeded, what still needs manual work, and where the release is blocked.
 13. If `gh` or `az` cannot complete the flow, fall back to `docs/publishing/azure-app-service.md` and capture the blocked step in `docs/publishing/lessons-learned.md`.

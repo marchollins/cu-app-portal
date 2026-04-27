@@ -10,9 +10,13 @@ This bundle supports one first-class publishing path for `{{APP_NAME}}`: GitHub 
 4. Keep local development on the localhost `DATABASE_URL` from `.env.example`.
 5. Set the App Service `DATABASE_URL` app setting to the Azure PostgreSQL connection string with `sslmode=require`.
 6. Use `.codex/skills/publish-to-azure/SKILL.md` to drive the publish flow when automation is available.
-7. Configure the `AZURE_WEBAPP_PUBLISH_PROFILE` repository secret expected by `.github/workflows/deploy-azure-app-service.yml`.
-8. Trigger the workflow and verify the deployment in Azure App Service.
-9. Let GitHub Actions build the deployment package and send the built artifact to Azure App Service.
+7. Configure GitHub Actions Azure authentication with OpenID Connect.
+8. Add these GitHub repository secrets:
+   - `AZURE_CLIENT_ID`
+   - `AZURE_TENANT_ID`
+   - `AZURE_SUBSCRIPTION_ID`
+9. Trigger the workflow and verify the deployment in Azure App Service.
+10. Let GitHub Actions build the deployment package and send the built artifact to Azure App Service.
 
 ## Fallback Path
 
@@ -21,21 +25,19 @@ If automation is blocked, complete the publish manually with the same manifest a
 1. Create the Azure resource group, PostgreSQL flexible server, and PostgreSQL database.
 2. Build the production `DATABASE_URL` from the Azure database credentials.
 3. Save `DATABASE_URL` in the Azure App Service app settings.
-4. Download the publish profile from Azure.
-5. Add the publish profile as the GitHub repository secret.
+4. Create or select the Azure identity used by GitHub Actions.
+5. Add the Azure identity secrets to GitHub.
 6. Push to `main` or trigger the workflow manually.
 7. Record any manual changes or blockers in `docs/publishing/lessons-learned.md`.
 
 ## GitHub CLI Shortcut
 
-If `gh` is authenticated, you can wire the publish-profile secret without opening the GitHub UI:
+If `gh` is authenticated, you can wire the Azure identity secrets without opening the GitHub UI:
 
 ```bash
-az webapp deployment list-publishing-profiles \
-  --resource-group {{AZURE_RESOURCE_GROUP}} \
-  --name {{APP_NAME_SLUG}} \
-  --xml \
-  | gh secret set AZURE_WEBAPP_PUBLISH_PROFILE
+gh secret set AZURE_CLIENT_ID --body "replace-me"
+gh secret set AZURE_TENANT_ID --body "replace-me"
+gh secret set AZURE_SUBSCRIPTION_ID --body "replace-me"
 ```
 
 Then trigger the workflow:

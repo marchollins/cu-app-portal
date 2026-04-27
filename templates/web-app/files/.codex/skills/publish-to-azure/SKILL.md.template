@@ -17,7 +17,7 @@ Use this skill to publish this app to Azure App Service through the supported Gi
 6. Build the production `DATABASE_URL` from the Azure PostgreSQL server, database, admin user, and password, using `sslmode=require`.
 7. Set the App Service `DATABASE_URL` app setting to the Azure database connection string while leaving the local `.env.example` value on localhost for development.
 8. Create or verify the Azure App Service app described by the manifest.
-9. Wire the deployment workflow in `.github/workflows/deploy-azure-app-service.yml`, including the `AZURE_WEBAPP_PUBLISH_PROFILE` repository secret expected by the workflow.
+9. Wire the deployment workflow in `.github/workflows/deploy-azure-app-service.yml`, preferring OpenID Connect with `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`.
 10. Prefer the GitHub Actions workflow to build the deployable package and send the built artifact to Azure App Service instead of relying on App Service to Oryx-build the raw repository.
 11. Run the safest available verification after wiring deployment and report what succeeded, what still needs manual work, and where the release is now blocked.
 12. If `gh` or `az` cannot complete the flow, fall back to `docs/publishing/azure-app-service.md` and capture the blocked step in `docs/publishing/lessons-learned.md`.

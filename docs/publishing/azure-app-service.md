@@ -16,9 +16,13 @@ This repository supports one first-class publishing path: GitHub Actions plus Az
 5. Keep local development on the localhost `DATABASE_URL` from `.env`.
 6. Set the App Service `DATABASE_URL` app setting to the Azure PostgreSQL connection string with `sslmode=require`.
 7. Set the startup command in Azure App Service to `npm run prisma:migrate:deploy && npm start`.
-8. Download the App Service publish profile and save it as the GitHub repository secret `AZURE_WEBAPP_PUBLISH_PROFILE`.
-9. Push to `main` or run the GitHub Actions workflow manually.
-10. Let GitHub Actions build the deployment package and send the built artifact to Azure App Service.
+8. Configure GitHub Actions Azure authentication with OpenID Connect.
+9. Add these GitHub repository secrets:
+   - `AZURE_CLIENT_ID`
+   - `AZURE_TENANT_ID`
+   - `AZURE_SUBSCRIPTION_ID`
+10. Push to `main` or run the GitHub Actions workflow manually.
+11. Let GitHub Actions build the deployment package and send the built artifact to Azure App Service.
 
 ## Recommended Azure CLI Shape
 
@@ -51,14 +55,12 @@ az webapp config appsettings set \
 
 ## GitHub CLI Shortcut
 
-If `gh` is authenticated, you can wire the publish-profile secret without opening the GitHub UI:
+If `gh` is authenticated, you can wire the Azure identity secrets without opening the GitHub UI:
 
 ```bash
-az webapp deployment list-publishing-profiles \
-  --resource-group rg-cu-app-portal \
-  --name cu-app-portal \
-  --xml \
-  | gh secret set AZURE_WEBAPP_PUBLISH_PROFILE
+gh secret set AZURE_CLIENT_ID --body "replace-me"
+gh secret set AZURE_TENANT_ID --body "81c32413-015d-4ba8-a93b-e1c28e355738"
+gh secret set AZURE_SUBSCRIPTION_ID --body "33e13fd4-7e2f-4be5-a1ec-c4ae6e1c1ecc"
 ```
 
 Then trigger the workflow:
@@ -81,7 +83,7 @@ After deployment:
 
 ## Notes
 
-- This path currently uses a publish-profile secret for GitHub Actions.
+- This path prefers OpenID Connect for GitHub Actions and only falls back to publish-profile auth if OIDC cannot be used.
 - The repo includes `package-lock.json`, so the workflow uses `npm ci`.
 - The workflow deploys a built package from GitHub Actions so App Service does not need to Oryx-build the source repository on every release.
 - Keep the production `DATABASE_URL` only in Azure App Service settings and keep local development on localhost.
