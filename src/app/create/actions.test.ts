@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getServerSession } from "@/auth/session";
 import { buildArchive } from "@/features/generation/build-archive";
-import { saveArtifact } from "@/features/generation/storage";
+import { deleteArtifact, saveArtifact } from "@/features/generation/storage";
 import { prisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
 import { createAppAction, extractCreateAppInput } from "./actions";
@@ -17,6 +17,7 @@ vi.mock("@/features/generation/build-archive", () => ({
 }));
 
 vi.mock("@/features/generation/storage", () => ({
+  deleteArtifact: vi.fn(),
   saveArtifact: vi.fn(),
 }));
 
@@ -50,6 +51,7 @@ describe("extractCreateAppInput", () => {
   beforeEach(() => {
     mockRedirect.mockReset();
     vi.mocked(buildArchive).mockReset();
+    vi.mocked(deleteArtifact).mockReset();
     vi.mocked(saveArtifact).mockReset();
     vi.mocked(recordAuditEvent).mockReset();
     vi.mocked(getServerSession).mockReset();
@@ -65,7 +67,7 @@ describe("extractCreateAppInput", () => {
     formData.set("templateSlug", "web-app");
     formData.set("appName", "Campus Dashboard");
     formData.set("description", "Shows campus metrics.");
-    formData.set("hostingTarget", "Vercel");
+    formData.set("hostingTarget", "Azure App Service");
 
     const input = await extractCreateAppInput(formData);
 
@@ -78,7 +80,7 @@ describe("extractCreateAppInput", () => {
     formData.set("templateSlug", "missing-template");
     formData.set("appName", "Campus Dashboard");
     formData.set("description", "Shows campus metrics.");
-    formData.set("hostingTarget", "Vercel");
+    formData.set("hostingTarget", "Azure App Service");
 
     await expect(extractCreateAppInput(formData)).rejects.toThrow(
       "Invalid template selection.",
@@ -87,12 +89,26 @@ describe("extractCreateAppInput", () => {
 });
 
 describe("createAppAction", () => {
+  beforeEach(() => {
+    mockRedirect.mockReset();
+    vi.mocked(buildArchive).mockReset();
+    vi.mocked(deleteArtifact).mockReset();
+    vi.mocked(saveArtifact).mockReset();
+    vi.mocked(recordAuditEvent).mockReset();
+    vi.mocked(getServerSession).mockReset();
+    vi.mocked(prisma.user.upsert).mockReset();
+    vi.mocked(prisma.template.upsert).mockReset();
+    vi.mocked(prisma.appRequest.create).mockReset();
+    vi.mocked(prisma.appRequest.update).mockReset();
+    vi.mocked(prisma.generatedArtifact.create).mockReset();
+  });
+
   it("generates an archive, stores it, and redirects to the download page", async () => {
     const formData = new FormData();
     formData.set("templateSlug", "web-app");
     formData.set("appName", "Campus Dashboard");
     formData.set("description", "Shows campus metrics.");
-    formData.set("hostingTarget", "Vercel");
+    formData.set("hostingTarget", "Azure App Service");
 
     vi.mocked(getServerSession).mockResolvedValue({
       user: { id: "user-123" },
@@ -120,7 +136,7 @@ describe("createAppAction", () => {
       templateSlug: "web-app",
       appName: "Campus Dashboard",
       description: "Shows campus metrics.",
-      hostingTarget: "Vercel",
+      hostingTarget: "Azure App Service",
     });
     expect(saveArtifact).toHaveBeenCalledWith(
       "campus-dashboard.zip",
@@ -145,7 +161,7 @@ describe("createAppAction", () => {
     formData.set("templateSlug", "web-app");
     formData.set("appName", "Campus Dashboard");
     formData.set("description", "Shows campus metrics.");
-    formData.set("hostingTarget", "Vercel");
+    formData.set("hostingTarget", "Azure App Service");
 
     vi.mocked(getServerSession).mockResolvedValue({
       user: { id: "user-123" },
@@ -173,6 +189,44 @@ describe("createAppAction", () => {
     );
   });
 
+  it("deletes a saved artifact when persistence fails after storage succeeds", async () => {
+    const formData = new FormData();
+    formData.set("templateSlug", "web-app");
+    formData.set("appName", "Campus Dashboard");
+    formData.set("description", "Shows campus metrics.");
+    formData.set("hostingTarget", "Azure App Service");
+
+    vi.mocked(getServerSession).mockResolvedValue({
+      user: { id: "user-123" },
+    } as Awaited<ReturnType<typeof getServerSession>>);
+    vi.mocked(prisma.template.upsert).mockResolvedValue({
+      id: "template-db-123",
+    } as Awaited<ReturnType<typeof prisma.template.upsert>>);
+    vi.mocked(prisma.appRequest.create).mockResolvedValue({
+      id: "request-999",
+    } as Awaited<ReturnType<typeof prisma.appRequest.create>>);
+    vi.mocked(buildArchive).mockResolvedValue({
+      buffer: Buffer.from("zip"),
+      filename: "campus-dashboard.zip",
+    });
+    vi.mocked(saveArtifact).mockResolvedValue(
+      "/tmp/.artifacts/campus-dashboard.zip",
+    );
+    vi.mocked(prisma.generatedArtifact.create).mockRejectedValue(
+      new Error("db failed"),
+    );
+
+    await expect(createAppAction(formData)).rejects.toThrow("db failed");
+
+    expect(deleteArtifact).toHaveBeenCalledWith(
+      "/tmp/.artifacts/campus-dashboard.zip",
+    );
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-999" },
+      data: { generationStatus: "FAILED" },
+    });
+  });
+
   it("uses a fallback e2e user when auth bypass is enabled", async () => {
     vi.stubEnv("E2E_AUTH_BYPASS", "true");
 
@@ -180,7 +234,7 @@ describe("createAppAction", () => {
     formData.set("templateSlug", "web-app");
     formData.set("appName", "Campus Dashboard");
     formData.set("description", "Shows campus metrics.");
-    formData.set("hostingTarget", "Vercel");
+    formData.set("hostingTarget", "Azure App Service");
 
     vi.mocked(getServerSession).mockResolvedValue(null);
     vi.mocked(prisma.user.upsert).mockResolvedValue({

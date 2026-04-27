@@ -1,0 +1,51 @@
+name: Deploy Portal to Azure App Service
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+env:
+  AZURE_WEBAPP_NAME: cu-app-portal
+  DEPLOY_PACKAGE_PATH: release
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Prepare deployment package
+        run: |
+          rm -rf "${{ env.DEPLOY_PACKAGE_PATH }}"
+          mkdir -p "${{ env.DEPLOY_PACKAGE_PATH }}"
+          cp -R .next "${{ env.DEPLOY_PACKAGE_PATH }}/.next"
+          cp -R node_modules "${{ env.DEPLOY_PACKAGE_PATH }}/node_modules"
+          cp package.json package-lock.json next.config.ts next-env.d.ts prisma.config.ts "${{ env.DEPLOY_PACKAGE_PATH }}/"
+          cp -R prisma "${{ env.DEPLOY_PACKAGE_PATH }}/prisma"
+          if [ -d public ]; then
+            cp -R public "${{ env.DEPLOY_PACKAGE_PATH }}/public"
+          fi
+
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ${{ env.DEPLOY_PACKAGE_PATH }}

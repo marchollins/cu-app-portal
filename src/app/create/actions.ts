@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import type { CreateAppRequestInput } from "@/features/app-requests/types";
 import { createAppSchema } from "@/features/create-app/validation";
 import { buildArchive } from "@/features/generation/build-archive";
-import { saveArtifact } from "@/features/generation/storage";
+import { deleteArtifact, saveArtifact } from "@/features/generation/storage";
 import {
   getActiveTemplateBySlug,
   serializeTemplateForStorage,
@@ -59,7 +59,20 @@ export async function extractCreateAppInput(
     hostingTarget: String(formData.get("hostingTarget") ?? ""),
   };
 
-  const parsed = createAppSchema.parse(payload);
+  const hostingTargetField = template.fields.find(
+    (field) => field.name === "hostingTarget" && field.type === "select",
+  );
+
+  if (!hostingTargetField) {
+    throw new Error("Template is missing hosting target configuration.");
+  }
+
+  if (hostingTargetField.options.length === 0) {
+    throw new Error("Template is missing hosting target options.");
+  }
+
+  const hostingTargets = hostingTargetField.options as [string, ...string[]];
+  const parsed = createAppSchema(hostingTargets).parse(payload);
 
   return { ...parsed, templateSlug: payload.templateSlug };
 }
@@ -91,10 +104,12 @@ export async function createAppAction(formData: FormData) {
       deploymentTarget: input.hostingTarget,
     },
   });
+  let savedStoragePath: string | null = null;
 
   try {
     const archive = await buildArchive(input);
     const storagePath = await saveArtifact(archive.filename, archive.buffer);
+    savedStoragePath = storagePath;
 
     await prisma.generatedArtifact.create({
       data: {
@@ -119,6 +134,10 @@ export async function createAppAction(formData: FormData) {
 
     redirect(`/download/${request.id}`);
   } catch (error) {
+    if (savedStoragePath) {
+      await deleteArtifact(savedStoragePath);
+    }
+
     await prisma.appRequest.update({
       where: { id: request.id },
       data: { generationStatus: "FAILED" },

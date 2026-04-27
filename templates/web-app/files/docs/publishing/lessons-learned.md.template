@@ -1,0 +1,19 @@
+# Publishing Lessons Learned
+
+Use this file to capture the operational details that make the next publish easier for `{{APP_NAME}}`.
+
+## Record Here
+
+- Which git, GitHub, and Azure steps completed successfully
+- Which steps required manual intervention
+- Which repository or Azure names changed from the manifest defaults
+- Which PostgreSQL server, database, and `DATABASE_URL` values were used in production
+- Which secrets, permissions, or publish profile issues blocked automation
+- Which recovery steps are safe to repeat
+- Which unresolved issues need a technical operator
+
+## Working Agreement
+
+- Update this file whenever the publish flow deviates from the supported path in `docs/publishing/azure-app-service.md`.
+- Keep local development on the localhost `.env.example` database and record only production `DATABASE_URL` changes here.
+- Keep entries short, factual, and safe for the next operator to follow.

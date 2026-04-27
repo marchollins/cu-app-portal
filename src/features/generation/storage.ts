@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const artifactRoot = join(process.cwd(), ".artifacts");
@@ -14,4 +14,8 @@ export async function saveArtifact(filename: string, buffer: Buffer) {
 
 export async function loadArtifact(storagePath: string) {
   return readFile(storagePath);
+}
+
+export async function deleteArtifact(storagePath: string) {
+  await rm(storagePath, { force: true });
 }

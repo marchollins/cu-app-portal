@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "1.0.0",
+  "templateSlug": "portal-repo",
+  "app": {
+    "name": "Cedarville App Portal",
+    "slug": "cu-app-portal",
+    "description": "Internal portal for Cedarville staff to create template-backed app packages."
+  },
+  "runtime": {
+    "family": "node",
+    "framework": "nextjs"
+  },
+  "hosting": {
+    "provider": "azure",
+    "service": "app-service",
+    "target": "Azure App Service"
+  },
+  "deployment": {
+    "method": "github-actions",
+    "workflowPath": ".github/workflows/deploy-azure-app-service.yml"
+  },
+  "defaults": {
+    "githubRepository": "cu-app-portal",
+    "azure": {
+      "resourceGroup": "rg-cu-app-portal",
+      "plan": "asp-cu-app-portal-s1",
+      "webApp": "cu-app-portal",
+      "runtimeStack": "NODE|20-lts",
+      "database": {
+        "server": "psql-cu-app-portal-260424",
+        "database": "cu-app-portal",
+        "adminUser": "portaladmin",
+        "sslMode": "require"
+      }
+    }
+  },
+  "environments": {
+    "development": {
+      "databaseUrl": "postgresql://portal:portal@localhost:5432/portal?schema=public"
+    },
+    "production": {
+      "databaseUrlAppSetting": "DATABASE_URL"
+    }
+  },
+  "applicationSettings": [
+    "DATABASE_URL",
+    "AUTH_SECRET",
+    "AUTH_MICROSOFT_ENTRA_ID_ID",
+    "AUTH_MICROSOFT_ENTRA_ID_SECRET",
+    "AUTH_MICROSOFT_ENTRA_ID_ISSUER"
+  ],
+  "automation": {
+    "skillPath": ".codex/skills/publish-to-azure/SKILL.md"
+  }
+}

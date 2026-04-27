@@ -23,6 +23,7 @@ describe("buildTokenMap", () => {
 
     expect(tokens).toEqual({
       APP_NAME: "Campus <Beta>",
+      APP_NAME_SLUG: "campus-beta",
       APP_NAME_JS: '"Campus <Beta>"',
       APP_DESCRIPTION: 'Tracks {housing} and "retention".',
       APP_DESCRIPTION_JS: '"Tracks {housing} and \\"retention\\"."',

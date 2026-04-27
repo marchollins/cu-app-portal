@@ -10,4 +10,8 @@ This starter is prepared for {{HOSTING_TARGET}}.
 
 1. Create a new GitHub repository for this project.
 2. Copy the generated files into that repository.
-3. Follow `docs/github-setup.md` and `docs/deployment-guide.md` in this package.
+3. Use the supported publishing path in `docs/publishing/azure-app-service.md`.
+4. Keep local development on the localhost `DATABASE_URL` in `.env.example`.
+5. Provision the Azure PostgreSQL database and set the production `DATABASE_URL` app setting during publish.
+6. Record manual steps, blockers, and operator handoff notes in `docs/publishing/lessons-learned.md`.
+7. Keep `docs/github-setup.md` and `docs/deployment-guide.md` as fallback handoff docs if automation is blocked.

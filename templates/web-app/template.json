@@ -2,9 +2,22 @@
   "slug": "web-app",
   "version": "1.0.0",
   "entryFiles": [
+    "package.json.template",
+    "tsconfig.json.template",
+    "next-env.d.ts",
     "README.md.template",
     "src/app/page.tsx.template",
+    "src/app/layout.tsx.template",
     "src/app/globals.css.template",
-    ".env.example.template"
+    ".env.example.template",
+    ".github/workflows/deploy-azure-app-service.yml.template",
+    ".codex/skills/publish-to-azure/SKILL.md.template",
+    "docs/publishing/azure-app-service.md.template",
+    "docs/publishing/lessons-learned.md.template"
+  ],
+  "generatedFiles": [
+    "docs/github-setup.md",
+    "docs/deployment-guide.md",
+    "app-portal/deployment-manifest.json"
   ]
 }

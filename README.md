@@ -6,6 +6,14 @@ Internal portal for Cedarville staff to create a new app package from an approve
 
 The portal signs staff in with Microsoft Entra ID, guides them through a template-backed app creation form, generates a ZIP package, and gives them a download page with GitHub and deployment instructions.
 
+The current `web-app` template now includes an Azure-first publishing bundle for generated apps:
+
+- a minimal Next.js starter repo skeleton
+- Azure App Service publishing docs
+- a generated deployment manifest
+- a GitHub Actions deployment workflow
+- a generated-app Codex publishing skill
+
 ## Local Setup
 
 1. Copy `.env.example` to `.env`.
@@ -28,3 +36,4 @@ The portal signs staff in with Microsoft Entra ID, guides them through a templat
 
 - [Portal setup](docs/portal/setup.md)
 - [Template authoring](docs/portal/template-authoring.md)
+- [Azure publishing](docs/publishing/azure-app-service.md)

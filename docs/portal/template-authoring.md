@@ -10,11 +10,17 @@ Each template lives under `templates/<slug>/` and currently includes:
 - `files/` for renderable starter files
 - `.template` file extensions for source files that receive token replacement
 
+Templates may also split output between:
+
+- `entryFiles` in `template.json` for real on-disk template assets under `files/`
+- `generatedFiles` in `template.json` for archive entries produced by code during generation
+
 ## Supported Tokens
 
 The web app starter currently supports these tokens:
 
 - `{{APP_NAME}}`
+- `{{APP_NAME_SLUG}}`
 - `{{APP_DESCRIPTION}}`
 - `{{HOSTING_TARGET}}`
 - `{{APP_NAME_JS}}`
@@ -31,6 +37,18 @@ Each template entry defines:
 - slug and display metadata
 - status (`ACTIVE` or `DISABLED`)
 - the fields rendered in the create form
+
+The current `web-app` template is intentionally Azure App Service only while the first publishing automation path is being hardened.
+
+## Publishing Bundle
+
+Publishing-capable templates can include assets such as:
+
+- `.github/workflows/`
+- `.codex/skills/`
+- `docs/publishing/`
+
+The current `web-app` template also emits a generated deployment manifest at `app-portal/deployment-manifest.json` so generated-app skills and future portal publishing flows can share the same deployment contract.
 
 ## Database Sync
 

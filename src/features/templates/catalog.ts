@@ -22,7 +22,7 @@ const templates: PortalTemplate[] = [
         label: "Hosting Target",
         type: "select",
         required: true,
-        options: ["Azure App Service", "Vercel", "Other"],
+        options: ["Azure App Service"],
       },
     ],
   },
@@ -41,6 +41,10 @@ export function getTemplateBySlug(slug: string) {
 }
 
 export function serializeTemplateForStorage(template: PortalTemplate) {
+  const hostingTargetField = template.fields.find(
+    (field) => field.name === "hostingTarget",
+  );
+
   return {
     slug: template.slug,
     name: template.name,
@@ -48,6 +52,7 @@ export function serializeTemplateForStorage(template: PortalTemplate) {
     version: template.version,
     status: template.status,
     inputSchema: template.fields,
-    hostingOptions: [],
+    hostingOptions:
+      hostingTargetField?.type === "select" ? hostingTargetField.options : [],
   };
 }
