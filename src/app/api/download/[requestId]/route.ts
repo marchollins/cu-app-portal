@@ -1,5 +1,8 @@
 import { getServerSession } from "@/auth/session";
-import { loadArtifact } from "@/features/generation/storage";
+import {
+  isMissingFileError,
+  loadArtifact,
+} from "@/features/generation/storage";
 import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { createDownloadHeaders } from "../headers";
@@ -64,7 +67,18 @@ export async function GET(
     return new Response("Not Found", { status: 404 });
   }
 
-  const buffer = await loadArtifact(appRequest.artifact.storagePath);
+  let buffer: Buffer;
+
+  try {
+    buffer = await loadArtifact(appRequest.artifact.storagePath);
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return new Response("Not Found", { status: 404 });
+    }
+
+    throw error;
+  }
+
   const headers = createDownloadHeaders(appRequest.artifact.filename);
   headers.set("content-type", appRequest.artifact.contentType);
 
@@ -73,5 +87,5 @@ export async function GET(
     supportReference: appRequest.supportReference,
   });
 
-  return new Response(buffer, { status: 200, headers });
+  return new Response(new Uint8Array(buffer), { status: 200, headers });
 }

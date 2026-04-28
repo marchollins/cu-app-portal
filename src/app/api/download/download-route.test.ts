@@ -4,6 +4,7 @@ import { GET } from "./[requestId]/route";
 
 const getServerSessionMock = vi.hoisted(() => vi.fn());
 const loadArtifactMock = vi.hoisted(() => vi.fn());
+const isMissingFileErrorMock = vi.hoisted(() => vi.fn());
 const recordAuditEventMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/auth/session", () => ({
@@ -11,6 +12,7 @@ vi.mock("@/auth/session", () => ({
 }));
 
 vi.mock("@/features/generation/storage", () => ({
+  isMissingFileError: isMissingFileErrorMock,
   loadArtifact: loadArtifactMock,
 }));
 
@@ -35,6 +37,7 @@ describe("createDownloadHeaders", () => {
   beforeEach(() => {
     getServerSessionMock.mockReset();
     loadArtifactMock.mockReset();
+    isMissingFileErrorMock.mockReset();
     recordAuditEventMock.mockReset();
     vi.mocked(prisma.user.upsert).mockReset();
     vi.mocked(prisma.appRequest.findFirst).mockReset();
@@ -72,6 +75,7 @@ describe("createDownloadHeaders", () => {
 
   it("returns the artifact for the owning user and records the download", async () => {
     getServerSessionMock.mockResolvedValue({ user: { id: "user-123" } });
+    isMissingFileErrorMock.mockReturnValue(false);
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
       id: "req_123",
       supportReference: "SUP-20260423-ABCD1234",
@@ -108,6 +112,7 @@ describe("createDownloadHeaders", () => {
   it("uses the fallback e2e user when bypass mode is enabled", async () => {
     vi.stubEnv("E2E_AUTH_BYPASS", "true");
     getServerSessionMock.mockResolvedValue(null);
+    isMissingFileErrorMock.mockReturnValue(false);
     vi.mocked(prisma.user.upsert).mockResolvedValue({
       id: "e2e-user-123",
     } as Awaited<ReturnType<typeof prisma.user.upsert>>);
@@ -136,5 +141,28 @@ describe("createDownloadHeaders", () => {
         }),
       }),
     );
+  });
+
+  it("returns 404 when the artifact file is missing on disk", async () => {
+    getServerSessionMock.mockResolvedValue({ user: { id: "user-123" } });
+    isMissingFileErrorMock.mockReturnValue(true);
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_123",
+      supportReference: "SUP-20260423-ABCD1234",
+      artifact: {
+        storagePath: "/home/site/wwwroot/.artifacts/campus-dashboard.zip",
+        filename: "campus-dashboard.zip",
+        contentType: "application/zip",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    loadArtifactMock.mockRejectedValue(new Error("missing"));
+
+    const response = await GET(
+      new Request("http://localhost/api/download/req_123"),
+      { params: Promise.resolve({ requestId: "req_123" }) },
+    );
+
+    expect(response.status).toBe(404);
+    expect(recordAuditEventMock).not.toHaveBeenCalled();
   });
 });

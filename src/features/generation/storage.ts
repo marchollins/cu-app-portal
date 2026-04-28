@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 type ArtifactStorageEnv = Record<string, string | undefined>;
 
@@ -18,9 +18,20 @@ export function resolveArtifactRoot(
   return join(cwd, ".artifacts");
 }
 
-const artifactRoot = resolveArtifactRoot();
+export function buildArtifactReadPaths(
+  storagePath: string,
+  env: ArtifactStorageEnv = process.env,
+) {
+  const artifactRoot = resolveArtifactRoot(env);
+  const fallbackPath = join(artifactRoot, basename(storagePath));
+
+  return fallbackPath === storagePath
+    ? [storagePath]
+    : [storagePath, fallbackPath];
+}
 
 export async function saveArtifact(filename: string, buffer: Buffer) {
+  const artifactRoot = resolveArtifactRoot();
   await mkdir(artifactRoot, { recursive: true });
 
   const storagePath = join(artifactRoot, filename);
@@ -30,9 +41,32 @@ export async function saveArtifact(filename: string, buffer: Buffer) {
 }
 
 export async function loadArtifact(storagePath: string) {
-  return readFile(storagePath);
+  const candidatePaths = buildArtifactReadPaths(storagePath);
+  let lastError: unknown;
+
+  for (const candidatePath of candidatePaths) {
+    try {
+      return await readFile(candidatePath);
+    } catch (error) {
+      if (!isMissingFileError(error)) {
+        throw error;
+      }
+
+      lastError = error;
+    }
+  }
+
+  throw lastError;
 }
 
 export async function deleteArtifact(storagePath: string) {
   await rm(storagePath, { force: true });
+}
+
+export function isMissingFileError(error: unknown) {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
 }

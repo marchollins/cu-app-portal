@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { resolveArtifactRoot } from "./storage";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { buildArtifactReadPaths, resolveArtifactRoot } from "./storage";
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("resolveArtifactRoot", () => {
   it("stores artifacts under the repo .artifacts directory by default", () => {
@@ -24,5 +28,17 @@ describe("resolveArtifactRoot", () => {
         "/workspace/cu-app-portal",
       ),
     ).toBe("/home/artifacts");
+  });
+
+  it("prefers the legacy path first and then falls back to the current artifact root", () => {
+    expect(
+      buildArtifactReadPaths(
+        "/home/site/wwwroot/.artifacts/campus-dashboard.zip",
+        { WEBSITE_SITE_NAME: "cu-app-portal", HOME: "/home" },
+      ),
+    ).toEqual([
+      "/home/site/wwwroot/.artifacts/campus-dashboard.zip",
+      "/home/artifacts/campus-dashboard.zip",
+    ]);
   });
 });
