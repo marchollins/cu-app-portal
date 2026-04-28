@@ -1,5 +1,7 @@
 # Node/Next.js Azure Publishing Design
 
+> Historical note: this document captures the earlier generated-app-skill-first publishing phase. The active roadmap for portal-owned publishing now lives in `docs/superpowers/specs/2026-04-28-portal-managed-publishing-design.md`.
+
 ## Overview
 
 This design defines the first publishing automation path for Cedarville-generated apps.

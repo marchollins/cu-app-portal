@@ -1,10 +1,10 @@
 # Cedarville App Portal
 
-Internal portal for Cedarville staff to create a new app package from an approved template.
+Internal portal for Cedarville staff to create a new app package from an approved template, track its managed GitHub repository, and move toward portal-managed Azure publishing.
 
 ## What It Does
 
-The portal signs staff in with Microsoft Entra ID, guides them through a template-backed app creation form, generates a ZIP package, and gives them a download page with GitHub and deployment instructions.
+The portal signs staff in with Microsoft Entra ID, guides them through a template-backed app creation form, generates a ZIP package, and now treats a portal-created GitHub repository as the canonical source of truth for supported publishing.
 
 The current `web-app` template now includes an Azure-first publishing bundle for generated apps:
 
@@ -37,3 +37,4 @@ The current `web-app` template now includes an Azure-first publishing bundle for
 - [Portal setup](docs/portal/setup.md)
 - [Template authoring](docs/portal/template-authoring.md)
 - [Azure publishing](docs/publishing/azure-app-service.md)
+- [Portal-managed publishing design](docs/superpowers/specs/2026-04-28-portal-managed-publishing-design.md)

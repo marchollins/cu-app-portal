@@ -2,6 +2,8 @@
 
 This repository supports one first-class publishing path: GitHub Actions plus Azure App Service for the Next.js portal app, backed by Azure Database for PostgreSQL.
 
+For the active product roadmap, prefer a portal-created managed GitHub repository as the source of truth. Manual local GitHub setup is now a fallback/operator path, not the preferred future UX.
+
 ## Recommended Path
 
 1. Review `app-portal/deployment-manifest.json`.

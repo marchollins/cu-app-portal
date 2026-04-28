@@ -42,12 +42,25 @@ model AppRequest {
   supportReference String
   visibility       String?
   deploymentTarget String?
+  sourceOfTruth    SourceOfTruth      @default(PORTAL_MANAGED_REPO)
+  repositoryProvider RepositoryProvider?
+  repositoryOwner  String?
+  repositoryName   String?
+  repositoryUrl    String?
+  repositoryDefaultBranch String?
+  repositoryVisibility String?
+  repositoryStatus RepositoryStatus   @default(PENDING)
+  publishStatus    PublishStatus      @default(NOT_STARTED)
+  publishUrl       String?
+  publishErrorSummary String?
+  lastPublishedAt  DateTime?
   publishedAt      DateTime?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   user             User               @relation(fields: [userId], references: [id])
   template         Template           @relation(fields: [templateId], references: [id])
   artifact         GeneratedArtifact?
+  publishAttempts  PublishAttempt[]
 }
 
 model GeneratedArtifact {
@@ -63,6 +76,18 @@ model GeneratedArtifact {
   appRequest   AppRequest   @relation(fields: [appRequestId], references: [id])
 }
 
+model PublishAttempt {
+  id           String               @id @default(cuid())
+  appRequestId String
+  status       PublishAttemptStatus
+  stage        PublishAttemptStage
+  errorSummary String?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime             @default(now())
+  appRequest   AppRequest           @relation(fields: [appRequestId], references: [id])
+}
+
 enum TemplateStatus {
   ACTIVE
   DISABLED
@@ -71,5 +96,44 @@ enum TemplateStatus {
 enum GenerationStatus {
   PENDING
   SUCCEEDED
+  FAILED
+}
+
+enum SourceOfTruth {
+  PORTAL_MANAGED_REPO
+}
+
+enum RepositoryProvider {
+  GITHUB
+}
+
+enum RepositoryStatus {
+  PENDING
+  READY
+  FAILED
+}
+
+enum PublishStatus {
+  NOT_STARTED
+  QUEUED
+  PROVISIONING
+  DEPLOYING
+  SUCCEEDED
+  FAILED
+}
+
+enum PublishAttemptStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum PublishAttemptStage {
+  QUEUED
+  PROVISIONING
+  DEPLOYING
+  VERIFYING
+  COMPLETED
   FAILED
 }

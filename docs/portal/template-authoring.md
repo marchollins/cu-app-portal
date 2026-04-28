@@ -1,6 +1,6 @@
 # Template Authoring
 
-Templates are metadata-driven starter packages used by the portal to generate ZIP artifacts.
+Templates are metadata-driven starter packages used by the portal to generate ZIP artifacts and managed GitHub repository contents from the same rendered source snapshot.
 
 ## Template Structure
 
@@ -38,7 +38,7 @@ Each template entry defines:
 - status (`ACTIVE` or `DISABLED`)
 - the fields rendered in the create form
 
-The current `web-app` template is intentionally Azure App Service only while the first publishing automation path is being hardened.
+The current `web-app` template is intentionally Azure App Service only while the first portal-managed publishing path is being hardened.
 
 ## Publishing Bundle
 
@@ -48,7 +48,13 @@ Publishing-capable templates can include assets such as:
 - `.codex/skills/`
 - `docs/publishing/`
 
-The current `web-app` template also emits a generated deployment manifest at `app-portal/deployment-manifest.json` so generated-app skills and future portal publishing flows can share the same deployment contract.
+The current `web-app` template also emits a generated deployment manifest at `app-portal/deployment-manifest.json` so generated-app fallback skills and portal-managed publishing flows can share the same deployment contract.
+
+Publishing-capable templates should assume this direction:
+
+- the portal renders the canonical source snapshot
+- the portal-created GitHub repo is the supported publish source of truth
+- the ZIP is a convenience artifact, not the primary deployment handoff
 
 ## Database Sync
 

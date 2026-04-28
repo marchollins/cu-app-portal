@@ -5,8 +5,13 @@ export default function HomePage() {
   return (
     <main>
       <h1>Cedarville App Portal</h1>
-      <p>Create a Cedarville-approved app package and download the starter ZIP.</p>
+      <p>
+        Create a Cedarville-approved app, track its managed GitHub repository,
+        and publish it to Azure with a portal-supported workflow.
+      </p>
       <Link href="/create">Create New App</Link>
+      {" | "}
+      <Link href="/apps">My Apps</Link>
     </main>
   );
 }

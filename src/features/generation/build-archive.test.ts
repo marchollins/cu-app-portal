@@ -98,6 +98,13 @@ describe("buildArchive", () => {
     await expect(
       zip.file("docs/publishing/azure-app-service.md")?.async("string"),
     ).resolves.toContain("DATABASE_URL");
+    expect(archive.files["README.md"]).toContain("Campus <Beta>");
+    expect(archive.files["app-portal/deployment-manifest.json"]).toBe(
+      expectedDeploymentManifest,
+    );
+    await expect(zip.file("README.md")?.async("string")).resolves.toBe(
+      archive.files["README.md"],
+    );
 
     const renderedManifest = JSON.parse(
       await zip.file("app-portal/deployment-manifest.json")!.async("string"),

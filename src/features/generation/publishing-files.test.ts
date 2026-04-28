@@ -29,13 +29,13 @@ describe("buildPublishingFiles", () => {
       "# Publish to Azure App Service",
     );
     expect(files["docs/publishing/azure-app-service.md"]).toContain(
-      "GitHub + Azure App Service",
+      "portal-managed GitHub + Azure App Service",
     );
     expect(files["docs/publishing/azure-app-service.md"]).toContain(
-      "GitHub Actions",
+      "portal create and track the managed GitHub repository",
     );
     expect(files["docs/publishing/azure-app-service.md"]).toContain(
-      "DATABASE_URL",
+      "Codex clone, edit, commit, and push",
     );
     expect(files["docs/publishing/azure-app-service.md"]).toContain(
       "Azure Database for PostgreSQL",
@@ -61,7 +61,7 @@ describe("buildPublishingFiles", () => {
       "selected hosting target is Vercel",
     );
     expect(files["docs/publishing/azure-app-service.md"]).toContain(
-      "recommended GitHub + Azure App Service path",
+      "portal-managed GitHub + Azure App Service path",
     );
     expect(files["docs/publishing/azure-app-service.md"]).not.toContain(
       "selected hosting target is Azure App Service",

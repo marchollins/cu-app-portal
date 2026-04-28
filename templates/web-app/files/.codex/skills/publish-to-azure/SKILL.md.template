@@ -11,8 +11,8 @@ Use this skill to publish this app to Azure App Service through the supported Gi
 
 1. Read `app-portal/deployment-manifest.json` before choosing names, commands, or Azure resources.
 2. Check that `git`, `gh`, and `az` are installed and that the current user is authenticated where required.
-3. Confirm the app is committed or explain the local git state before creating or updating a GitHub repository.
-4. Create or connect the GitHub repository using the manifest defaults unless the operator provides replacements.
+3. Prefer the managed GitHub repository the portal created for this app, and explain the local git state before creating or updating anything else.
+4. Create or connect the GitHub repository only when the portal-managed repo is unavailable or an operator explicitly asks for a manual recovery path.
 5. Create or verify the Azure resource group, Azure Database for PostgreSQL flexible server, and Azure database described by the manifest.
 6. Build the production `DATABASE_URL` from the Azure PostgreSQL server, database, admin user, and password, using `sslmode=require`.
 7. Set the App Service `DATABASE_URL` app setting to the Azure database connection string while leaving the local `.env.example` value on localhost for development.

@@ -3,9 +3,11 @@
 import { createHash } from "node:crypto";
 import { redirect } from "next/navigation";
 import type { CreateAppRequestInput } from "@/features/app-requests/types";
+import { resolveCurrentUserId } from "@/features/app-requests/current-user";
 import { createAppSchema } from "@/features/create-app/validation";
 import { buildArchive } from "@/features/generation/build-archive";
 import { deleteArtifact, saveArtifact } from "@/features/generation/storage";
+import { bootstrapManagedRepository } from "@/features/repositories/bootstrap-managed-repository";
 import {
   getActiveTemplateBySlug,
   serializeTemplateForStorage,
@@ -13,34 +15,6 @@ import {
 import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { createSupportReference } from "@/lib/support-reference";
-import { getServerSession } from "@/auth/session";
-
-async function resolveRequestUserId() {
-  const session = await getServerSession();
-
-  if (typeof session?.user?.id === "string") {
-    return session.user.id;
-  }
-
-  if (process.env.E2E_AUTH_BYPASS === "true") {
-    const fallbackUser = await prisma.user.upsert({
-      where: { entraOid: "e2e-bypass-user" },
-      update: {
-        email: "e2e-bypass@cedarville.edu",
-        displayName: "E2E Bypass User",
-      },
-      create: {
-        entraOid: "e2e-bypass-user",
-        email: "e2e-bypass@cedarville.edu",
-        displayName: "E2E Bypass User",
-      },
-    });
-
-    return fallbackUser.id;
-  }
-
-  throw new Error("Authenticated user not found.");
-}
 
 export async function extractCreateAppInput(
   formData: FormData,
@@ -90,7 +64,7 @@ export async function createAppAction(formData: FormData) {
     update: serializeTemplateForStorage(template),
     create: serializeTemplateForStorage(template),
   });
-  const userId = await resolveRequestUserId();
+  const userId = await resolveCurrentUserId();
   const supportReference = createSupportReference();
   const request = await prisma.appRequest.create({
     data: {
@@ -102,6 +76,9 @@ export async function createAppAction(formData: FormData) {
       generationStatus: "PENDING",
       supportReference,
       deploymentTarget: input.hostingTarget,
+      sourceOfTruth: "PORTAL_MANAGED_REPO",
+      repositoryStatus: "PENDING",
+      publishStatus: "NOT_STARTED",
     },
   });
   let savedStoragePath: string | null = null;
@@ -121,6 +98,53 @@ export async function createAppAction(formData: FormData) {
         sizeBytes: archive.buffer.byteLength,
       },
     });
+
+    await recordAuditEvent("REPOSITORY_BOOTSTRAP_REQUESTED", {
+      requestId: request.id,
+      supportReference,
+    });
+
+    try {
+      const repository = await bootstrapManagedRepository({
+        appRequestId: request.id,
+        input,
+        files: archive.files,
+      });
+
+      await prisma.appRequest.update({
+        where: { id: request.id },
+        data: {
+          repositoryProvider: repository.provider,
+          repositoryOwner: repository.owner,
+          repositoryName: repository.name,
+          repositoryUrl: repository.url,
+          repositoryDefaultBranch: repository.defaultBranch,
+          repositoryVisibility: repository.visibility,
+          repositoryStatus: "READY",
+        },
+      });
+
+      await recordAuditEvent("REPOSITORY_BOOTSTRAP_SUCCEEDED", {
+        requestId: request.id,
+        supportReference,
+        repositoryUrl: repository.url,
+      });
+    } catch (error) {
+      await prisma.appRequest.update({
+        where: { id: request.id },
+        data: {
+          repositoryStatus: "FAILED",
+          publishErrorSummary:
+            error instanceof Error ? error.message : "unknown",
+        },
+      });
+
+      await recordAuditEvent("REPOSITORY_BOOTSTRAP_FAILED", {
+        requestId: request.id,
+        supportReference,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    }
 
     await prisma.appRequest.update({
       where: { id: request.id },

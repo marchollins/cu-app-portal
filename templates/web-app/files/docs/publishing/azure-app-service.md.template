@@ -1,23 +1,24 @@
 # Publish to Azure App Service
 
-This bundle supports one first-class publishing path for `{{APP_NAME}}`: GitHub Actions plus Azure App Service for the generated Next.js app, backed by Azure Database for PostgreSQL.
+This bundle supports one first-class publishing path for `{{APP_NAME}}`: a portal-managed GitHub repository plus Azure App Service for the generated Next.js app, backed by Azure Database for PostgreSQL.
 
 ## Recommended Path
 
-1. Create or connect a GitHub repository for this app.
-2. Review `app-portal/deployment-manifest.json` for the generated deployment contract.
-3. Create the Azure Database for PostgreSQL flexible server and the production database named in the manifest.
-4. Keep local development on the localhost `DATABASE_URL` from `.env.example`.
-5. Set the App Service `DATABASE_URL` app setting to the Azure PostgreSQL connection string with `sslmode=require`.
-6. Set both `AUTH_URL` and `NEXTAUTH_URL` to the public site origin, for example `https://{{APP_NAME_SLUG}}.azurewebsites.net`, so Auth.js does not fall back to `localhost`.
-7. Use `.codex/skills/publish-to-azure/SKILL.md` to drive the publish flow when automation is available.
-8. Configure GitHub Actions Azure authentication with OpenID Connect.
-9. Add these GitHub repository secrets:
+1. Prefer the GitHub repository that the portal created and tracks for this app.
+2. Open that managed repo locally in Codex on your machine and push the changes you want published.
+3. Review `app-portal/deployment-manifest.json` for the generated deployment contract.
+4. Create the Azure Database for PostgreSQL flexible server and the production database named in the manifest.
+5. Keep local development on the localhost `DATABASE_URL` from `.env.example`.
+6. Set the App Service `DATABASE_URL` app setting to the Azure PostgreSQL connection string with `sslmode=require`.
+7. Set both `AUTH_URL` and `NEXTAUTH_URL` to the public site origin, for example `https://{{APP_NAME_SLUG}}.azurewebsites.net`, so Auth.js does not fall back to `localhost`.
+8. Use `.codex/skills/publish-to-azure/SKILL.md` to drive the publish flow when portal automation is unavailable and you need a local recovery path.
+9. Configure GitHub Actions Azure authentication with OpenID Connect.
+10. Add these GitHub repository secrets:
    - `AZURE_CLIENT_ID`
    - `AZURE_TENANT_ID`
    - `AZURE_SUBSCRIPTION_ID`
-10. Trigger the workflow and verify the deployment in Azure App Service.
-11. Let GitHub Actions build the deployment package and send the built artifact to Azure App Service.
+11. Trigger the workflow and verify the deployment in Azure App Service.
+12. Let GitHub Actions build the deployment package and send the built artifact to Azure App Service.
 
 ## Fallback Path
 
@@ -52,7 +53,7 @@ gh workflow run deploy-azure-app-service.yml
 
 ## Support Notes
 
-- Treat this path as the supported default even if the original hosting choice needs to expand later.
+- Treat the portal-managed repo as the supported source of truth even if you also keep a ZIP copy.
 - Keep production `DATABASE_URL` in Azure App Service settings and keep development `.env.example` on localhost.
 - Set both `AUTH_URL` and `NEXTAUTH_URL` to the public Azure hostname in production so Auth.js does not generate `localhost` sign-in URLs.
 - Prefer updating the generated workflow and manifest instead of creating parallel deployment instructions.

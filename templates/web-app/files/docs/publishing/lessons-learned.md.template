@@ -5,6 +5,7 @@ Use this file to capture the operational details that make the next publish easi
 ## Record Here
 
 - Which git, GitHub, and Azure steps completed successfully
+- Which managed GitHub org and repository were used
 - Which steps required manual intervention
 - Which repository or Azure names changed from the manifest defaults
 - Which PostgreSQL server, database, and `DATABASE_URL` values were used in production
