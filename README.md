@@ -18,11 +18,12 @@ The current `web-app` template now includes an Azure-first publishing bundle for
 
 1. Copy `.env.example` to `.env`.
 2. Configure PostgreSQL and Microsoft Entra ID values.
-3. Run `npm install`.
-4. Run `npm run db:up`.
-5. Run `npm run prisma:migrate:deploy`.
-6. Run `npm run prisma:seed`.
-7. Run `npm run dev`.
+3. If you want managed repo creation to run during app generation, also configure the GitHub App values in `.env`.
+4. Run `npm install`.
+5. Run `npm run db:up`.
+6. Run `npm run prisma:migrate:deploy`.
+7. Run `npm run prisma:seed`.
+8. Run `npm run dev`.
 
 ## Key Scripts
 

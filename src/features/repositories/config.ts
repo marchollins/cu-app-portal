@@ -33,15 +33,29 @@ export type GitHubAppConfig = {
   installationIdsByOrg: Record<string, string>;
 };
 
+function normalizePrivateKey(value: string) {
+  return value.includes("\\n") ? value.replaceAll("\\n", "\n") : value;
+}
+
 function parseInstallationIds(
   defaultOrg: string,
   defaultInstallationId: string | undefined,
   rawInstallations: string | undefined,
 ) {
   if (rawInstallations) {
-    const parsed = z.record(z.string().regex(/^\d+$/)).parse(
-      JSON.parse(rawInstallations) as unknown,
-    );
+    let parsedJson: unknown;
+
+    try {
+      parsedJson = JSON.parse(rawInstallations) as unknown;
+    } catch (error) {
+      throw new Error(
+        `GITHUB_APP_INSTALLATIONS_JSON must be valid JSON. ${
+          error instanceof Error ? error.message : "unknown parse error"
+        }`,
+      );
+    }
+
+    const parsed = z.record(z.string().regex(/^\d+$/)).parse(parsedJson);
 
     return parsed;
   }
@@ -71,7 +85,7 @@ export function loadGitHubAppConfig(
 
   return {
     appId: parsed.GITHUB_APP_ID,
-    privateKey: parsed.GITHUB_APP_PRIVATE_KEY,
+    privateKey: normalizePrivateKey(parsed.GITHUB_APP_PRIVATE_KEY),
     allowedOrgs,
     defaultOrg: parsed.GITHUB_DEFAULT_ORG,
     defaultRepoVisibility: parsed.GITHUB_DEFAULT_REPO_VISIBILITY,

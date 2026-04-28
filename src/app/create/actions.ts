@@ -130,6 +130,12 @@ export async function createAppAction(formData: FormData) {
         repositoryUrl: repository.url,
       });
     } catch (error) {
+      console.error("Managed repository bootstrap failed", {
+        requestId: request.id,
+        supportReference,
+        error,
+      });
+
       await prisma.appRequest.update({
         where: { id: request.id },
         data: {

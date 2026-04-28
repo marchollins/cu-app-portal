@@ -91,6 +91,8 @@ describe("extractCreateAppInput", () => {
 });
 
 describe("createAppAction", () => {
+  const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
   beforeEach(() => {
     mockRedirect.mockReset();
     vi.mocked(buildArchive).mockReset();
@@ -103,6 +105,7 @@ describe("createAppAction", () => {
     vi.mocked(prisma.appRequest.create).mockReset();
     vi.mocked(prisma.appRequest.update).mockReset();
     vi.mocked(prisma.generatedArtifact.create).mockReset();
+    consoleErrorSpy.mockClear();
   });
 
   it("generates an archive, stores it, and redirects to the download page", async () => {
@@ -301,6 +304,14 @@ describe("createAppAction", () => {
         publishErrorSummary: "missing GitHub app config",
       },
     });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "Managed repository bootstrap failed",
+      expect.objectContaining({
+        requestId: "request-789",
+        supportReference: expect.any(String),
+        error: expect.any(Error),
+      }),
+    );
     expect(recordAuditEvent).toHaveBeenCalledWith(
       "REPOSITORY_BOOTSTRAP_FAILED",
       expect.objectContaining({

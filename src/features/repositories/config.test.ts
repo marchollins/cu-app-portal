@@ -19,4 +19,32 @@ describe("loadGitHubAppConfig", () => {
     expect(config.allowedOrgs).toEqual(["cedarville-it", "cedarville-apps"]);
     expect(config.installationIdsByOrg["cedarville-apps"]).toBe("222");
   });
+
+  it("normalizes escaped newlines in the GitHub App private key", () => {
+    const config = loadGitHubAppConfig({
+      GITHUB_APP_ID: "12345",
+      GITHUB_APP_PRIVATE_KEY:
+        "-----BEGIN PRIVATE KEY-----\\nline-1\\nline-2\\n-----END PRIVATE KEY-----",
+      GITHUB_ALLOWED_ORGS: "cedarville-it",
+      GITHUB_DEFAULT_ORG: "cedarville-it",
+      GITHUB_DEFAULT_REPO_VISIBILITY: "private",
+      GITHUB_APP_INSTALLATION_ID: "111",
+    });
+
+    expect(config.privateKey).toContain("-----BEGIN PRIVATE KEY-----\nline-1");
+    expect(config.privateKey).not.toContain("\\n");
+  });
+
+  it("fails with a clear error when installation mapping JSON is invalid", () => {
+    expect(() =>
+      loadGitHubAppConfig({
+        GITHUB_APP_ID: "12345",
+        GITHUB_APP_PRIVATE_KEY: "test-key",
+        GITHUB_ALLOWED_ORGS: "cedarville-it",
+        GITHUB_DEFAULT_ORG: "cedarville-it",
+        GITHUB_DEFAULT_REPO_VISIBILITY: "private",
+        GITHUB_APP_INSTALLATIONS_JSON: "{not-json}",
+      }),
+    ).toThrow(/GITHUB_APP_INSTALLATIONS_JSON must be valid JSON/i);
+  });
 });

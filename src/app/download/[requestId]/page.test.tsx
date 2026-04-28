@@ -60,4 +60,29 @@ describe("DownloadPage", () => {
       screen.getByRole("button", { name: /publish to azure/i }),
     ).toBeInTheDocument();
   });
+
+  it("shows the stored repo bootstrap error as a repo setup note", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_456",
+      repositoryStatus: "FAILED",
+      repositoryUrl: null,
+      publishStatus: "NOT_STARTED",
+      publishUrl: null,
+      publishErrorSummary: "No GitHub App installation is configured for org \"cedarville-it\".",
+      artifact: {
+        id: "artifact-456",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+
+    render(
+      await DownloadPage({
+        params: Promise.resolve({ requestId: "req_456" }),
+      }),
+    );
+
+    expect(screen.getByText(/repo setup failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/repo setup note:/i)).toBeInTheDocument();
+    expect(screen.queryByText(/last publish note:/i)).not.toBeInTheDocument();
+  });
 });

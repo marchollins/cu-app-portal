@@ -30,6 +30,21 @@ function renderRepositoryStatus(status: string, repositoryUrl: string | null) {
   return <p>Repo setup in progress.</p>;
 }
 
+function renderRepositoryNote(
+  repositoryStatus: string,
+  publishErrorSummary: string | null,
+) {
+  if (!publishErrorSummary) {
+    return null;
+  }
+
+  if (repositoryStatus === "FAILED") {
+    return <p>Repo setup note: {publishErrorSummary}</p>;
+  }
+
+  return <p>Last publish note: {publishErrorSummary}</p>;
+}
+
 function renderPublishAction(requestId: string, publishStatus: string, repositoryStatus: string) {
   if (repositoryStatus !== "READY") {
     return null;
@@ -108,9 +123,10 @@ export default async function DownloadPage({
           Published URL: <a href={appRequest.publishUrl}>{appRequest.publishUrl}</a>
         </p>
       ) : null}
-      {appRequest.publishErrorSummary ? (
-        <p>Last publish note: {appRequest.publishErrorSummary}</p>
-      ) : null}
+      {renderRepositoryNote(
+        appRequest.repositoryStatus,
+        appRequest.publishErrorSummary,
+      )}
       {renderPublishAction(
         requestId,
         appRequest.publishStatus,

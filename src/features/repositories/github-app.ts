@@ -8,6 +8,7 @@ type GitHubAppClientOptions = {
   privateKey: string;
   installationId: string;
   fetchImpl?: FetchLike;
+  sleepImpl?: (ms: number) => Promise<void>;
 };
 
 type CreateRepositoryInput = {
@@ -24,6 +25,9 @@ type GitHubBlobResponse = {
 
 type GitHubCommitResponse = {
   sha: string;
+  tree?: {
+    sha: string;
+  };
 };
 
 type GitHubTreeResponse = {
@@ -38,6 +42,18 @@ type GitHubRepositoryResponse = {
     login: string;
   };
 };
+
+type GitHubRefResponse = {
+  object: {
+    sha: string;
+  };
+};
+
+type GitHubApiError = Error & {
+  status?: number;
+};
+
+const GIT_REPO_INIT_RETRY_DELAYS_MS = [250, 500, 1000];
 
 function base64UrlJson(value: unknown) {
   return Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -64,11 +80,41 @@ function createGitHubAppJwt(appId: string, privateKey: string) {
 }
 
 async function readJson<T>(response: Response): Promise<T> {
+  const responseText = await response.text();
+  const responseJson = responseText ? (JSON.parse(responseText) as T) : null;
+
   if (!response.ok) {
-    throw new Error(`GitHub API request failed: ${response.status} ${response.statusText}`);
+    const error = new Error(
+      `GitHub API request failed: ${response.status} ${response.statusText}${
+        responseJson &&
+        typeof responseJson === "object" &&
+        responseJson !== null &&
+        "message" in responseJson &&
+        typeof responseJson.message === "string"
+          ? ` - ${responseJson.message}`
+          : ""
+      }`,
+    ) as GitHubApiError;
+    error.status = response.status;
+
+    throw error;
   }
 
-  return (await response.json()) as T;
+  return responseJson as T;
+}
+
+function isRetriableGitHubConflict(error: unknown) {
+  return (
+    error instanceof Error &&
+    "status" in error &&
+    error.status === 409
+  );
+}
+
+function defaultSleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 export function createGitHubAppClient({
@@ -76,6 +122,7 @@ export function createGitHubAppClient({
   privateKey,
   installationId,
   fetchImpl = fetch,
+  sleepImpl = defaultSleep,
 }: GitHubAppClientOptions) {
   async function createInstallationToken() {
     const response = await fetchImpl(
@@ -123,7 +170,7 @@ export function createGitHubAppClient({
           body: JSON.stringify({
             name,
             visibility,
-            auto_init: false,
+            auto_init: true,
           }),
         },
       );
@@ -131,80 +178,110 @@ export function createGitHubAppClient({
         createRepoResponse,
       );
 
-      const tree = [];
+      let updatedRepository: GitHubRepositoryResponse | null = null;
 
-      for (const [filePath, content] of Object.entries(files)) {
-        const blobResponse = await fetchImpl(
-          `https://api.github.com/repos/${owner}/${name}/git/blobs`,
-          {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              content,
-              encoding: "utf-8",
-            }),
-          },
-        );
-        const blob = await readJson<GitHubBlobResponse>(blobResponse);
+      for (let attempt = 0; attempt <= GIT_REPO_INIT_RETRY_DELAYS_MS.length; attempt += 1) {
+        try {
+          const defaultBranchRef = await readJson<GitHubRefResponse>(
+            await fetchImpl(
+              `https://api.github.com/repos/${owner}/${name}/git/ref/heads/${repository.default_branch}`,
+              {
+                method: "GET",
+                headers,
+              },
+            ),
+          );
 
-        tree.push({
-          path: filePath,
-          mode: "100644",
-          type: "blob",
-          sha: blob.sha,
-        });
+          const tree = [];
+
+          for (const [filePath, content] of Object.entries(files)) {
+            const blobResponse = await fetchImpl(
+              `https://api.github.com/repos/${owner}/${name}/git/blobs`,
+              {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                  content,
+                  encoding: "utf-8",
+                }),
+              },
+            );
+            const blob = await readJson<GitHubBlobResponse>(blobResponse);
+
+            tree.push({
+              path: filePath,
+              mode: "100644",
+              type: "blob",
+              sha: blob.sha,
+            });
+          }
+
+          const treeResponse = await fetchImpl(
+            `https://api.github.com/repos/${owner}/${name}/git/trees`,
+            {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ tree }),
+            },
+          );
+          const createdTree = await readJson<GitHubTreeResponse>(treeResponse);
+
+          const commitResponse = await fetchImpl(
+            `https://api.github.com/repos/${owner}/${name}/git/commits`,
+            {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                message: "Initial portal app source",
+                tree: createdTree.sha,
+                parents: [defaultBranchRef.object.sha],
+              }),
+            },
+          );
+          const commit = await readJson<GitHubCommitResponse>(commitResponse);
+
+          const refResponse = await fetchImpl(
+            `https://api.github.com/repos/${owner}/${name}/git/refs/heads/${repository.default_branch}`,
+            {
+              method: "PATCH",
+              headers,
+              body: JSON.stringify({
+                sha: commit.sha,
+                force: false,
+              }),
+            },
+          );
+          await readJson<{ ref: string }>(refResponse);
+
+          const updateRepoResponse = await fetchImpl(
+            `https://api.github.com/repos/${owner}/${name}`,
+            {
+              method: "PATCH",
+              headers,
+              body: JSON.stringify({
+                default_branch: defaultBranch,
+              }),
+            },
+          );
+          updatedRepository = await readJson<GitHubRepositoryResponse>(
+            updateRepoResponse,
+          );
+          break;
+        } catch (error) {
+          if (
+            !isRetriableGitHubConflict(error) ||
+            attempt === GIT_REPO_INIT_RETRY_DELAYS_MS.length
+          ) {
+            throw error;
+          }
+
+          await sleepImpl(GIT_REPO_INIT_RETRY_DELAYS_MS[attempt]);
+        }
       }
 
-      const treeResponse = await fetchImpl(
-        `https://api.github.com/repos/${owner}/${name}/git/trees`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ tree }),
-        },
-      );
-      const createdTree = await readJson<GitHubTreeResponse>(treeResponse);
-
-      const commitResponse = await fetchImpl(
-        `https://api.github.com/repos/${owner}/${name}/git/commits`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            message: "Initial portal app source",
-            tree: createdTree.sha,
-            parents: [],
-          }),
-        },
-      );
-      const commit = await readJson<GitHubCommitResponse>(commitResponse);
-
-      const refResponse = await fetchImpl(
-        `https://api.github.com/repos/${owner}/${name}/git/refs`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            ref: `refs/heads/${defaultBranch}`,
-            sha: commit.sha,
-          }),
-        },
-      );
-      await readJson<{ ref: string }>(refResponse);
-
-      const updateRepoResponse = await fetchImpl(
-        `https://api.github.com/repos/${owner}/${name}`,
-        {
-          method: "PATCH",
-          headers,
-          body: JSON.stringify({
-            default_branch: defaultBranch,
-          }),
-        },
-      );
-      const updatedRepository = await readJson<GitHubRepositoryResponse>(
-        updateRepoResponse,
-      );
+      if (!updatedRepository) {
+        throw new Error("GitHub repository initialization did not complete.");
+      }
 
       return {
         owner: updatedRepository.owner.login,
