@@ -6,9 +6,24 @@ import {
   publishToAzureAction,
   retryPublishAction,
 } from "@/features/publishing/actions";
+import {
+  retryRepositoryBootstrapAction,
+  saveGitHubUsernameAndGrantAccessAction,
+} from "@/features/repositories/actions";
+import { buildCodexHandoffUrl } from "@/features/repositories/codex-handoff";
 import { prisma } from "@/lib/db";
 
 function renderAction(requestId: string, repositoryStatus: string, publishStatus: string) {
+  if (repositoryStatus === "FAILED") {
+    const retryAction = retryRepositoryBootstrapAction.bind(null, requestId);
+
+    return (
+      <form action={retryAction}>
+        <button type="submit">Retry Repo Setup</button>
+      </form>
+    );
+  }
+
   if (repositoryStatus !== "READY") {
     return <span>Portal publish unavailable until the managed repo is ready.</span>;
   }
@@ -47,6 +62,10 @@ export default async function MyAppsPage() {
     where: { userId },
     orderBy: { createdAt: "desc" },
   });
+  const currentUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { githubUsername: true },
+  });
 
   return (
     <main>
@@ -61,11 +80,69 @@ export default async function MyAppsPage() {
               <h2>{request.appName}</h2>
               <p>Generation: {request.generationStatus.toLowerCase()}</p>
               <p>Repo: {request.repositoryStatus.toLowerCase()}</p>
+              <p>
+                Repo access: {request.repositoryAccessStatus.toLowerCase().replaceAll("_", " ")}
+              </p>
               <p>Publish: {request.publishStatus.toLowerCase().replaceAll("_", " ")}</p>
               {request.repositoryUrl ? (
-                <p>
-                  Repo URL: <a href={request.repositoryUrl}>{request.repositoryUrl}</a>
-                </p>
+                <>
+                  <p>
+                    Repo URL: <a href={request.repositoryUrl}>{request.repositoryUrl}</a>
+                  </p>
+                  <p>
+                    <a
+                      href={buildCodexHandoffUrl(
+                        request.repositoryUrl,
+                        request.appName,
+                        request.id,
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open Repo in Codex
+                    </a>
+                  </p>
+                </>
+              ) : null}
+              {request.repositoryStatus === "READY" &&
+              request.repositoryAccessStatus !== "GRANTED" ? (
+                <>
+                  <p>
+                    Need GitHub access for Codex? Create an account at{" "}
+                    <a
+                      href="https://github.com/signup"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      GitHub sign up
+                    </a>
+                    , then enter your username here.
+                  </p>
+                  {request.repositoryAccessNote ? (
+                    <p>Repo access note: {request.repositoryAccessNote}</p>
+                  ) : null}
+                  <form
+                    action={saveGitHubUsernameAndGrantAccessAction.bind(
+                      null,
+                      request.id,
+                    )}
+                  >
+                    <label>
+                      GitHub Username
+                      <input
+                        name="githubUsername"
+                        type="text"
+                        required
+                        defaultValue={currentUser?.githubUsername ?? ""}
+                      />
+                    </label>
+                    <button type="submit">
+                      {request.repositoryAccessStatus === "INVITED"
+                        ? "Resend Repo Access Invite"
+                        : "Save Username and Grant Repo Access"}
+                    </button>
+                  </form>
+                </>
               ) : null}
               {request.publishUrl ? (
                 <p>

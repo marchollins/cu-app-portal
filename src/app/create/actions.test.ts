@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveCurrentUserId } from "@/features/app-requests/current-user";
 import { buildArchive } from "@/features/generation/build-archive";
 import { deleteArtifact, saveArtifact } from "@/features/generation/storage";
+import { grantManagedRepositoryAccess } from "@/features/repositories/access";
 import { bootstrapManagedRepository } from "@/features/repositories/bootstrap-managed-repository";
 import { prisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
@@ -34,8 +35,15 @@ vi.mock("@/features/repositories/bootstrap-managed-repository", () => ({
   bootstrapManagedRepository: vi.fn(),
 }));
 
+vi.mock("@/features/repositories/access", () => ({
+  grantManagedRepositoryAccess: vi.fn(),
+}));
+
 vi.mock("@/lib/db", () => ({
   prisma: {
+    user: {
+      findUnique: vi.fn(),
+    },
     template: {
       upsert: vi.fn(),
     },
@@ -55,10 +63,12 @@ describe("extractCreateAppInput", () => {
     vi.mocked(buildArchive).mockReset();
     vi.mocked(deleteArtifact).mockReset();
     vi.mocked(saveArtifact).mockReset();
+    vi.mocked(grantManagedRepositoryAccess).mockReset();
     vi.mocked(bootstrapManagedRepository).mockReset();
     vi.mocked(recordAuditEvent).mockReset();
     vi.mocked(resolveCurrentUserId).mockReset();
     vi.mocked(prisma.template.upsert).mockReset();
+    vi.mocked(prisma.user.findUnique).mockReset();
     vi.mocked(prisma.appRequest.create).mockReset();
     vi.mocked(prisma.appRequest.update).mockReset();
     vi.mocked(prisma.generatedArtifact.create).mockReset();
@@ -98,10 +108,12 @@ describe("createAppAction", () => {
     vi.mocked(buildArchive).mockReset();
     vi.mocked(deleteArtifact).mockReset();
     vi.mocked(saveArtifact).mockReset();
+    vi.mocked(grantManagedRepositoryAccess).mockReset();
     vi.mocked(bootstrapManagedRepository).mockReset();
     vi.mocked(recordAuditEvent).mockReset();
     vi.mocked(resolveCurrentUserId).mockReset();
     vi.mocked(prisma.template.upsert).mockReset();
+    vi.mocked(prisma.user.findUnique).mockReset();
     vi.mocked(prisma.appRequest.create).mockReset();
     vi.mocked(prisma.appRequest.update).mockReset();
     vi.mocked(prisma.generatedArtifact.create).mockReset();
@@ -116,6 +128,9 @@ describe("createAppAction", () => {
     formData.set("hostingTarget", "Azure App Service");
 
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: null,
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
     vi.mocked(prisma.template.upsert).mockResolvedValue({
       id: "template-db-123",
     } as Awaited<ReturnType<typeof prisma.template.upsert>>);
@@ -181,6 +196,8 @@ describe("createAppAction", () => {
         repositoryDefaultBranch: "main",
         repositoryVisibility: "private",
         repositoryStatus: "READY",
+        repositoryAccessStatus: "NOT_REQUESTED",
+        repositoryAccessNote: null,
       },
     });
     expect(prisma.appRequest.update).toHaveBeenCalledWith({
@@ -202,6 +219,9 @@ describe("createAppAction", () => {
     formData.set("hostingTarget", "Azure App Service");
 
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: null,
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
     vi.mocked(prisma.template.upsert).mockResolvedValue({
       id: "template-db-123",
     } as Awaited<ReturnType<typeof prisma.template.upsert>>);
@@ -233,6 +253,9 @@ describe("createAppAction", () => {
     formData.set("hostingTarget", "Azure App Service");
 
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: null,
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
     vi.mocked(prisma.template.upsert).mockResolvedValue({
       id: "template-db-123",
     } as Awaited<ReturnType<typeof prisma.template.upsert>>);
@@ -272,6 +295,9 @@ describe("createAppAction", () => {
     formData.set("hostingTarget", "Azure App Service");
 
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: null,
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
     vi.mocked(prisma.template.upsert).mockResolvedValue({
       id: "template-db-123",
     } as Awaited<ReturnType<typeof prisma.template.upsert>>);
@@ -320,5 +346,73 @@ describe("createAppAction", () => {
       }),
     );
     expect(mockRedirect).toHaveBeenCalledWith("/download/request-789");
+  });
+
+  it("grants repo access automatically when the user already has a GitHub username", async () => {
+    const formData = new FormData();
+    formData.set("templateSlug", "web-app");
+    formData.set("appName", "Campus Dashboard");
+    formData.set("description", "Shows campus metrics.");
+    formData.set("hostingTarget", "Azure App Service");
+
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+    vi.mocked(prisma.template.upsert).mockResolvedValue({
+      id: "template-db-123",
+    } as Awaited<ReturnType<typeof prisma.template.upsert>>);
+    vi.mocked(prisma.appRequest.create).mockResolvedValue({
+      id: "request-321",
+    } as Awaited<ReturnType<typeof prisma.appRequest.create>>);
+    vi.mocked(buildArchive).mockResolvedValue({
+      buffer: Buffer.from("zip"),
+      files: {
+        "README.md": "# Campus Dashboard\n",
+      },
+      filename: "campus-dashboard.zip",
+    });
+    vi.mocked(saveArtifact).mockResolvedValue(
+      "/tmp/.artifacts/campus-dashboard.zip",
+    );
+    vi.mocked(prisma.generatedArtifact.create).mockResolvedValue({
+      id: "artifact-123",
+    } as Awaited<ReturnType<typeof prisma.generatedArtifact.create>>);
+    vi.mocked(bootstrapManagedRepository).mockResolvedValue({
+      provider: "GITHUB",
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      url: "https://github.com/cedarville-it/campus-dashboard",
+      defaultBranch: "main",
+      visibility: "private",
+    });
+    vi.mocked(grantManagedRepositoryAccess).mockResolvedValue({
+      status: "INVITED",
+      invitationId: 42,
+    });
+
+    await createAppAction(formData);
+
+    expect(grantManagedRepositoryAccess).toHaveBeenCalledWith({
+      owner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      githubUsername: "portalstaff",
+    });
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-321" },
+      data: {
+        repositoryAccessStatus: "INVITED",
+        repositoryAccessNote:
+          "GitHub invited @portalstaff to this repository.",
+      },
+    });
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      "REPOSITORY_ACCESS_SUCCEEDED",
+      expect.objectContaining({
+        requestId: "request-321",
+        githubUsername: "portalstaff",
+        accessStatus: "INVITED",
+      }),
+    );
   });
 });

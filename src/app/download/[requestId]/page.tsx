@@ -6,14 +6,33 @@ import {
   publishToAzureAction,
   retryPublishAction,
 } from "@/features/publishing/actions";
+import {
+  retryRepositoryBootstrapAction,
+  saveGitHubUsernameAndGrantAccessAction,
+} from "@/features/repositories/actions";
+import { buildCodexHandoffUrl } from "@/features/repositories/codex-handoff";
 import { prisma } from "@/lib/db";
 
-function renderRepositoryStatus(status: string, repositoryUrl: string | null) {
+function renderRepositoryStatus(
+  status: string,
+  repositoryUrl: string | null,
+  appName: string,
+  requestId: string,
+) {
   if (status === "READY" && repositoryUrl) {
+    const codexUrl = buildCodexHandoffUrl(repositoryUrl, appName, requestId);
+
     return (
-      <p>
-        Managed repo ready: <a href={repositoryUrl}>{repositoryUrl}</a>
-      </p>
+      <>
+        <p>
+          Managed repo ready: <a href={repositoryUrl}>{repositoryUrl}</a>
+        </p>
+        <p>
+          <a href={codexUrl} target="_blank" rel="noreferrer">
+            Open Repo in Codex
+          </a>
+        </p>
+      </>
     );
   }
 
@@ -45,7 +64,67 @@ function renderRepositoryNote(
   return <p>Last publish note: {publishErrorSummary}</p>;
 }
 
+function renderRepositoryAccessSection(
+  requestId: string,
+  repositoryStatus: string,
+  repositoryAccessStatus: string,
+  repositoryAccessNote: string | null,
+  githubUsername: string | null,
+) {
+  if (repositoryStatus !== "READY") {
+    return null;
+  }
+
+  if (repositoryAccessStatus === "GRANTED") {
+    return <p>Repo access granted{githubUsername ? ` for @${githubUsername}` : ""}.</p>;
+  }
+
+  const grantAccessAction = saveGitHubUsernameAndGrantAccessAction.bind(
+    null,
+    requestId,
+  );
+
+  return (
+    <>
+      <p>
+        Need GitHub access for Codex? Create an account at{" "}
+        <a href="https://github.com/signup" target="_blank" rel="noreferrer">
+          GitHub sign up
+        </a>
+        , then enter your username here so the portal can invite you to the managed repo.
+      </p>
+      {repositoryAccessNote ? <p>Repo access note: {repositoryAccessNote}</p> : null}
+      <form action={grantAccessAction}>
+        <label>
+          GitHub Username
+          <input
+            name="githubUsername"
+            type="text"
+            required
+            defaultValue={githubUsername ?? ""}
+          />
+        </label>
+        <button type="submit">
+          {repositoryAccessStatus === "INVITED"
+            ? "Resend Repo Access Invite"
+            : "Save Username and Grant Repo Access"}
+        </button>
+      </form>
+    </>
+  );
+}
+
 function renderPublishAction(requestId: string, publishStatus: string, repositoryStatus: string) {
+  if (repositoryStatus === "FAILED") {
+    const retryAction = retryRepositoryBootstrapAction.bind(null, requestId);
+
+    return (
+      <form action={retryAction}>
+        <button type="submit">Retry Repo Setup</button>
+      </form>
+    );
+  }
+
   if (repositoryStatus !== "READY") {
     return null;
   }
@@ -99,6 +178,11 @@ export default async function DownloadPage({
     notFound();
   }
 
+  const currentUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { githubUsername: true },
+  });
+
   return (
     <main>
       <h1>Your App Is Ready</h1>
@@ -110,6 +194,15 @@ export default async function DownloadPage({
       {renderRepositoryStatus(
         appRequest.repositoryStatus,
         appRequest.repositoryUrl,
+        appRequest.appName,
+        requestId,
+      )}
+      {renderRepositoryAccessSection(
+        requestId,
+        appRequest.repositoryStatus,
+        appRequest.repositoryAccessStatus,
+        appRequest.repositoryAccessNote,
+        currentUser?.githubUsername ?? null,
       )}
       <ol>
         <li>Open the managed repo locally in Codex on your machine.</li>

@@ -19,6 +19,13 @@ type CreateRepositoryInput = {
   defaultBranch: string;
 };
 
+type AddRepositoryCollaboratorInput = {
+  owner: string;
+  name: string;
+  username: string;
+  permission: "pull" | "triage" | "push" | "maintain" | "admin";
+};
+
 type GitHubBlobResponse = {
   sha: string;
 };
@@ -288,6 +295,33 @@ export function createGitHubAppClient({
         name: updatedRepository.name,
         url: updatedRepository.html_url,
         defaultBranch: updatedRepository.default_branch,
+      };
+    },
+    async addRepositoryCollaborator({
+      owner,
+      name,
+      username,
+      permission,
+    }: AddRepositoryCollaboratorInput) {
+      const headers = await withInstallationHeaders();
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${owner}/${name}/collaborators/${username}`,
+        {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({ permission }),
+        },
+      );
+
+      if (response.status === 204) {
+        return { status: "GRANTED" as const };
+      }
+
+      const invitation = await readJson<{ id?: number }>(response);
+
+      return {
+        status: "INVITED" as const,
+        invitationId: invitation?.id ?? null,
       };
     },
   };

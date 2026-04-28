@@ -12,6 +12,7 @@ model User {
   entraOid    String        @unique
   email       String        @unique
   displayName String
+  githubUsername String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   appRequests AppRequest[]
@@ -50,6 +51,8 @@ model AppRequest {
   repositoryDefaultBranch String?
   repositoryVisibility String?
   repositoryStatus RepositoryStatus   @default(PENDING)
+  repositoryAccessStatus RepositoryAccessStatus @default(NOT_REQUESTED)
+  repositoryAccessNote String?
   publishStatus    PublishStatus      @default(NOT_STARTED)
   publishUrl       String?
   publishErrorSummary String?
@@ -110,6 +113,13 @@ enum RepositoryProvider {
 enum RepositoryStatus {
   PENDING
   READY
+  FAILED
+}
+
+enum RepositoryAccessStatus {
+  NOT_REQUESTED
+  INVITED
+  GRANTED
   FAILED
 }
 
