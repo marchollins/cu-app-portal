@@ -1,7 +1,24 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-const artifactRoot = join(process.cwd(), ".artifacts");
+type ArtifactStorageEnv = Record<string, string | undefined>;
+
+export function resolveArtifactRoot(
+  env: ArtifactStorageEnv = process.env,
+  cwd = process.cwd(),
+) {
+  if (env.ARTIFACT_STORAGE_ROOT) {
+    return env.ARTIFACT_STORAGE_ROOT;
+  }
+
+  if (env.WEBSITE_SITE_NAME) {
+    return join(env.HOME ?? "/home", "artifacts");
+  }
+
+  return join(cwd, ".artifacts");
+}
+
+const artifactRoot = resolveArtifactRoot();
 
 export async function saveArtifact(filename: string, buffer: Buffer) {
   await mkdir(artifactRoot, { recursive: true });

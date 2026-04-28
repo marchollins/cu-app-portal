@@ -94,6 +94,7 @@ After deployment:
 - The repo includes `package-lock.json`, so the workflow uses `npm ci`.
 - The workflow deploys a built package from GitHub Actions so App Service does not need to Oryx-build the source repository on every release.
 - The deployment package must include the repo `templates/` directory because the create flow reads template manifests and source files from `process.cwd()/templates/...` at runtime.
+- Generated ZIP artifacts should be written to a writable directory outside `/home/site/wwwroot`; the portal defaults to `/home/artifacts` on Azure App Service and supports `ARTIFACT_STORAGE_ROOT` as an override.
 - Set both `AUTH_URL` and `NEXTAUTH_URL` to the public Azure hostname in production so Auth.js does not generate `localhost` sign-in URLs.
 - Minimal working baseline: the default `*.azurewebsites.net` hostname can work, but a custom production domain may still be needed if Chrome Safe Browsing distrusts the shared Azure hostname.
 - Keep the production `DATABASE_URL` only in Azure App Service settings and keep local development on localhost.
