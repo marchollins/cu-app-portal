@@ -1,11 +1,25 @@
 import { getServerSession } from "@/auth/session";
+import type { CreateAppRequestInput } from "@/features/app-requests/types";
+import { buildArchive } from "@/features/generation/build-archive";
 import {
   isMissingFileError,
   loadArtifact,
 } from "@/features/generation/storage";
 import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
+import { z } from "zod";
 import { createDownloadHeaders } from "../headers";
+
+const storedRequestInputSchema = z.object({
+  templateSlug: z.string().min(1),
+  appName: z.string().min(1),
+  description: z.string().min(1),
+  hostingTarget: z.string().min(1),
+});
+
+function parseStoredRequestInput(value: unknown): CreateAppRequestInput {
+  return storedRequestInputSchema.parse(value);
+}
 
 async function resolveDownloadUserId() {
   const session = await getServerSession();
@@ -53,6 +67,7 @@ export async function GET(
     select: {
       id: true,
       supportReference: true,
+      submittedConfig: true,
       artifact: {
         select: {
           storagePath: true,
@@ -72,11 +87,14 @@ export async function GET(
   try {
     buffer = await loadArtifact(appRequest.artifact.storagePath);
   } catch (error) {
-    if (isMissingFileError(error)) {
-      return new Response("Not Found", { status: 404 });
+    if (!isMissingFileError(error)) {
+      throw error;
     }
 
-    throw error;
+    const regeneratedArchive = await buildArchive(
+      parseStoredRequestInput(appRequest.submittedConfig),
+    );
+    buffer = regeneratedArchive.buffer;
   }
 
   const headers = createDownloadHeaders(appRequest.artifact.filename);

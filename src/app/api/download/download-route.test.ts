@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { buildArchive } from "@/features/generation/build-archive";
 import { createDownloadHeaders } from "./headers";
 import { GET } from "./[requestId]/route";
 
@@ -14,6 +15,10 @@ vi.mock("@/auth/session", () => ({
 vi.mock("@/features/generation/storage", () => ({
   isMissingFileError: isMissingFileErrorMock,
   loadArtifact: loadArtifactMock,
+}));
+
+vi.mock("@/features/generation/build-archive", () => ({
+  buildArchive: vi.fn(),
 }));
 
 vi.mock("@/lib/audit", () => ({
@@ -38,6 +43,7 @@ describe("createDownloadHeaders", () => {
     getServerSessionMock.mockReset();
     loadArtifactMock.mockReset();
     isMissingFileErrorMock.mockReset();
+    vi.mocked(buildArchive).mockReset();
     recordAuditEventMock.mockReset();
     vi.mocked(prisma.user.upsert).mockReset();
     vi.mocked(prisma.appRequest.findFirst).mockReset();
@@ -79,6 +85,12 @@ describe("createDownloadHeaders", () => {
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
       id: "req_123",
       supportReference: "SUP-20260423-ABCD1234",
+      submittedConfig: {
+        templateSlug: "web-app",
+        appName: "Campus Dashboard",
+        description: "Shows campus metrics.",
+        hostingTarget: "Azure App Service",
+      },
       artifact: {
         storagePath: "/tmp/.artifacts/campus-dashboard.zip",
         filename: "campus-dashboard.zip",
@@ -119,6 +131,12 @@ describe("createDownloadHeaders", () => {
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
       id: "req_123",
       supportReference: "SUP-20260423-ABCD1234",
+      submittedConfig: {
+        templateSlug: "web-app",
+        appName: "Campus Dashboard",
+        description: "Shows campus metrics.",
+        hostingTarget: "Azure App Service",
+      },
       artifact: {
         storagePath: "/tmp/.artifacts/campus-dashboard.zip",
         filename: "campus-dashboard.zip",
@@ -143,12 +161,18 @@ describe("createDownloadHeaders", () => {
     );
   });
 
-  it("returns 404 when the artifact file is missing on disk", async () => {
+  it("regenerates the archive when the artifact file is missing on disk", async () => {
     getServerSessionMock.mockResolvedValue({ user: { id: "user-123" } });
     isMissingFileErrorMock.mockReturnValue(true);
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
       id: "req_123",
       supportReference: "SUP-20260423-ABCD1234",
+      submittedConfig: {
+        templateSlug: "web-app",
+        appName: "Campus Dashboard",
+        description: "Shows campus metrics.",
+        hostingTarget: "Azure App Service",
+      },
       artifact: {
         storagePath: "/home/site/wwwroot/.artifacts/campus-dashboard.zip",
         filename: "campus-dashboard.zip",
@@ -156,13 +180,35 @@ describe("createDownloadHeaders", () => {
       },
     } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
     loadArtifactMock.mockRejectedValue(new Error("missing"));
+    vi.mocked(buildArchive).mockResolvedValue({
+      buffer: Buffer.from("zip-data"),
+      files: {
+        "README.md": "# Campus Dashboard\n",
+      },
+      filename: "campus-dashboard.zip",
+    });
 
     const response = await GET(
       new Request("http://localhost/api/download/req_123"),
       { params: Promise.resolve({ requestId: "req_123" }) },
     );
 
-    expect(response.status).toBe(404);
-    expect(recordAuditEventMock).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(Buffer.from(await response.arrayBuffer()).toString("utf8")).toBe(
+      "zip-data",
+    );
+    expect(buildArchive).toHaveBeenCalledWith({
+      templateSlug: "web-app",
+      appName: "Campus Dashboard",
+      description: "Shows campus metrics.",
+      hostingTarget: "Azure App Service",
+    });
+    expect(recordAuditEventMock).toHaveBeenCalledWith(
+      "ARTIFACT_DOWNLOADED",
+      expect.objectContaining({
+        requestId: "req_123",
+        supportReference: "SUP-20260423-ABCD1234",
+      }),
+    );
   });
 });
