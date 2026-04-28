@@ -40,6 +40,7 @@ jobs:
           cp -R node_modules "${{ env.DEPLOY_PACKAGE_PATH }}/node_modules"
           cp package.json package-lock.json next.config.ts next-env.d.ts prisma.config.ts "${{ env.DEPLOY_PACKAGE_PATH }}/"
           cp -R prisma "${{ env.DEPLOY_PACKAGE_PATH }}/prisma"
+          cp -R templates "${{ env.DEPLOY_PACKAGE_PATH }}/templates"
           if [ -d public ]; then
             cp -R public "${{ env.DEPLOY_PACKAGE_PATH }}/public"
           fi

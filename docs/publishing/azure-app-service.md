@@ -93,6 +93,7 @@ After deployment:
 - This path prefers OpenID Connect for GitHub Actions and only falls back to publish-profile auth if OIDC cannot be used.
 - The repo includes `package-lock.json`, so the workflow uses `npm ci`.
 - The workflow deploys a built package from GitHub Actions so App Service does not need to Oryx-build the source repository on every release.
+- The deployment package must include the repo `templates/` directory because the create flow reads template manifests and source files from `process.cwd()/templates/...` at runtime.
 - Set both `AUTH_URL` and `NEXTAUTH_URL` to the public Azure hostname in production so Auth.js does not generate `localhost` sign-in URLs.
 - Minimal working baseline: the default `*.azurewebsites.net` hostname can work, but a custom production domain may still be needed if Chrome Safe Browsing distrusts the shared Azure hostname.
 - Keep the production `DATABASE_URL` only in Azure App Service settings and keep local development on localhost.
