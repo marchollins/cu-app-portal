@@ -10,7 +10,8 @@ import {
   retryRepositoryBootstrapAction,
   saveGitHubUsernameAndGrantAccessAction,
 } from "@/features/repositories/actions";
-import { buildCodexHandoffUrl } from "@/features/repositories/codex-handoff";
+import { buildCodexHandoffPrompt } from "@/features/repositories/codex-handoff";
+import { CopyCodexHandoffButton } from "@/features/repositories/copy-codex-handoff-button";
 import { prisma } from "@/lib/db";
 
 function renderRepositoryStatus(
@@ -20,7 +21,11 @@ function renderRepositoryStatus(
   requestId: string,
 ) {
   if (status === "READY" && repositoryUrl) {
-    const codexUrl = buildCodexHandoffUrl(repositoryUrl, appName, requestId);
+    const codexPrompt = buildCodexHandoffPrompt(
+      repositoryUrl,
+      appName,
+      requestId,
+    );
 
     return (
       <>
@@ -28,9 +33,7 @@ function renderRepositoryStatus(
           Managed repo ready: <a href={repositoryUrl}>{repositoryUrl}</a>
         </p>
         <p>
-          <a href={codexUrl} target="_blank" rel="noreferrer">
-            Open Repo in Codex
-          </a>
+          <CopyCodexHandoffButton prompt={codexPrompt} />
         </p>
       </>
     );

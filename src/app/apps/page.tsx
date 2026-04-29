@@ -10,7 +10,8 @@ import {
   retryRepositoryBootstrapAction,
   saveGitHubUsernameAndGrantAccessAction,
 } from "@/features/repositories/actions";
-import { buildCodexHandoffUrl } from "@/features/repositories/codex-handoff";
+import { buildCodexHandoffPrompt } from "@/features/repositories/codex-handoff";
+import { CopyCodexHandoffButton } from "@/features/repositories/copy-codex-handoff-button";
 import { prisma } from "@/lib/db";
 
 function renderAction(requestId: string, repositoryStatus: string, publishStatus: string) {
@@ -90,17 +91,13 @@ export default async function MyAppsPage() {
                     Repo URL: <a href={request.repositoryUrl}>{request.repositoryUrl}</a>
                   </p>
                   <p>
-                    <a
-                      href={buildCodexHandoffUrl(
+                    <CopyCodexHandoffButton
+                      prompt={buildCodexHandoffPrompt(
                         request.repositoryUrl,
                         request.appName,
                         request.id,
                       )}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open Repo in Codex
-                    </a>
+                    />
                   </p>
                 </>
               ) : null}

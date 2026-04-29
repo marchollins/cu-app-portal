@@ -68,8 +68,8 @@ describe("DownloadPage", () => {
       screen.getByText(/managed repo ready/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: /open repo in codex/i }),
-    ).toHaveAttribute("href", expect.stringContaining("chatgpt.com/codex"));
+      screen.getByRole("button", { name: /copy codex handoff prompt/i }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByText(/create a new github repository/i),
     ).not.toBeInTheDocument();
@@ -116,7 +116,7 @@ describe("DownloadPage", () => {
       screen.getByRole("button", { name: /retry repo setup/i }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("link", { name: /open repo in codex/i }),
+      screen.queryByRole("button", { name: /copy codex handoff prompt/i }),
     ).not.toBeInTheDocument();
   });
 });

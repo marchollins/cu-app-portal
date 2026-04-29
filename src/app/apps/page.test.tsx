@@ -64,8 +64,8 @@ describe("MyAppsPage", () => {
     expect(screen.getByText(/repo access: granted/i)).toBeInTheDocument();
     expect(screen.getByText(/publish: failed/i)).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: /open repo in codex/i }),
-    ).toHaveAttribute("href", expect.stringContaining("chatgpt.com/codex"));
+      screen.getByRole("button", { name: /copy codex handoff prompt/i }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /retry publish/i }),
     ).toBeInTheDocument();
@@ -99,7 +99,7 @@ describe("MyAppsPage", () => {
       screen.queryByRole("button", { name: /publish to azure/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("link", { name: /open repo in codex/i }),
+      screen.queryByRole("button", { name: /copy codex handoff prompt/i }),
     ).not.toBeInTheDocument();
   });
 });
