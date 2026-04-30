@@ -1,5 +1,12 @@
+import { DefaultAzureCredential } from "@azure/identity";
+import { createGitHubAppClient } from "@/features/repositories/github-app";
+import { loadGitHubAppConfig } from "@/features/repositories/config";
 import { prisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
+import { createAzureArmClient } from "./azure/arm-client";
+import { loadAzurePublishConfig } from "./azure/config";
+import { createMicrosoftGraphClient } from "./azure/graph-client";
+import { createAzurePublishRuntime } from "./azure/runtime";
 
 export type ProvisionedPublishTarget = {
   azureResourceGroup: string;
@@ -29,21 +36,57 @@ export type PublishRuntime = {
   verifyDeployment: (publishUrl: string) => Promise<VerificationResult>;
 };
 
-const defaultRuntime: PublishRuntime = {
-  async provisionInfrastructure() {
-    throw new Error("Azure publish runtime is not configured yet.");
-  },
-  async deployRepository() {
-    throw new Error("Azure publish runtime is not configured yet.");
-  },
-  async verifyDeployment() {
-    throw new Error("Azure publish runtime is not configured yet.");
-  },
-};
+function createAzureTokenProvider(scope: string) {
+  const credential = new DefaultAzureCredential();
+
+  return async () => {
+    const token = await credential.getToken(scope);
+
+    if (!token?.token) {
+      throw new Error(`Azure token was not available for scope ${scope}.`);
+    }
+
+    return token.token;
+  };
+}
+
+function createDefaultRuntime() {
+  const config = loadAzurePublishConfig();
+  const githubConfig = loadGitHubAppConfig();
+  const installationId =
+    githubConfig.installationIdsByOrg[githubConfig.defaultOrg];
+
+  if (!installationId) {
+    throw new Error(
+      `No GitHub App installation is configured for org "${githubConfig.defaultOrg}".`,
+    );
+  }
+
+  return createAzurePublishRuntime({
+    config,
+    prisma,
+    arm: createAzureArmClient({
+      subscriptionId: config.azureSubscriptionId,
+      tokenProvider: createAzureTokenProvider(
+        "https://management.azure.com/.default",
+      ),
+    }),
+    graph: createMicrosoftGraphClient({
+      tokenProvider: createAzureTokenProvider(
+        "https://graph.microsoft.com/.default",
+      ),
+    }),
+    github: createGitHubAppClient({
+      appId: githubConfig.appId,
+      privateKey: githubConfig.privateKey,
+      installationId,
+    }),
+  });
+}
 
 export async function runPublishAttempt(
   attemptId: string,
-  runtime: PublishRuntime = defaultRuntime,
+  runtime?: PublishRuntime,
 ) {
   const attempt = await prisma.publishAttempt.findUnique({
     where: { id: attemptId },
@@ -74,7 +117,9 @@ export async function runPublishAttempt(
   });
 
   try {
-    const publishTarget = await runtime.provisionInfrastructure(
+    const effectiveRuntime = runtime ?? createDefaultRuntime();
+
+    const publishTarget = await effectiveRuntime.provisionInfrastructure(
       attempt.appRequestId,
     );
 
@@ -97,7 +142,9 @@ export async function runPublishAttempt(
       },
     });
 
-    const deployment = await runtime.deployRepository(attempt.appRequestId);
+    const deployment = await effectiveRuntime.deployRepository(
+      attempt.appRequestId,
+    );
 
     await prisma.publishAttempt.update({
       where: { id: attemptId },
@@ -115,7 +162,9 @@ export async function runPublishAttempt(
       },
     });
 
-    const verification = await runtime.verifyDeployment(deployment.publishUrl);
+    const verification = await effectiveRuntime.verifyDeployment(
+      deployment.publishUrl,
+    );
 
     const completedAt = new Date();
 

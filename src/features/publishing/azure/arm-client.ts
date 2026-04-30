@@ -6,6 +6,12 @@ type AzureArmClientOptions = {
   fetchImpl?: FetchLike;
 };
 
+type AzureWebAppResponse = {
+  properties?: {
+    defaultHostName?: string;
+  };
+};
+
 async function readJson<T>(response: Response): Promise<T> {
   const text = await response.text();
 
@@ -47,7 +53,7 @@ export function createAzureArmClient({
       startupCommand: string;
       tags: Record<string, string>;
     }) {
-      return readJson(
+      return readJson<AzureWebAppResponse>(
         await fetchImpl(
           resourceUrl(
             `/resourceGroups/${input.resourceGroup}/providers/Microsoft.Web/sites/${input.name}`,

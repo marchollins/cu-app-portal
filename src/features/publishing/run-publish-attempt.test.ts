@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
+import { loadAzurePublishConfig } from "./azure/config";
 import { runPublishAttempt } from "./run-publish-attempt";
 
 vi.mock("@/lib/audit", () => ({
@@ -19,12 +20,17 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
+vi.mock("./azure/config", () => ({
+  loadAzurePublishConfig: vi.fn(),
+}));
+
 describe("runPublishAttempt", () => {
   beforeEach(() => {
     vi.mocked(prisma.publishAttempt.findUnique).mockReset();
     vi.mocked(prisma.publishAttempt.update).mockReset();
     vi.mocked(prisma.appRequest.update).mockReset();
     vi.mocked(recordAuditEvent).mockReset();
+    vi.mocked(loadAzurePublishConfig).mockReset();
   });
 
   it("moves a queued publish attempt through provisioning, deploy, and success", async () => {
@@ -175,6 +181,58 @@ describe("runPublishAttempt", () => {
         publishStatus: "FAILED",
         publishErrorSummary: "azure permission denied",
       },
+    });
+  });
+
+  it("marks the attempt and request failed when default runtime construction throws", async () => {
+    vi.mocked(prisma.publishAttempt.findUnique).mockResolvedValue({
+      id: "attempt-123",
+      appRequestId: "request-123",
+      appRequest: {
+        id: "request-123",
+      },
+    } as Awaited<ReturnType<typeof prisma.publishAttempt.findUnique>>);
+    vi.mocked(loadAzurePublishConfig).mockImplementation(() => {
+      throw new Error("missing azure config");
+    });
+
+    await expect(runPublishAttempt("attempt-123")).rejects.toThrow(
+      "missing azure config",
+    );
+
+    expect(prisma.publishAttempt.update).toHaveBeenCalledWith({
+      where: { id: "attempt-123" },
+      data: expect.objectContaining({
+        status: "RUNNING",
+        stage: "PROVISIONING",
+      }),
+    });
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-123" },
+      data: {
+        publishStatus: "PROVISIONING",
+        publishErrorSummary: null,
+      },
+    });
+    expect(prisma.publishAttempt.update).toHaveBeenCalledWith({
+      where: { id: "attempt-123" },
+      data: expect.objectContaining({
+        status: "FAILED",
+        stage: "FAILED",
+        errorSummary: "missing azure config",
+      }),
+    });
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-123" },
+      data: {
+        publishStatus: "FAILED",
+        publishErrorSummary: "missing azure config",
+      },
+    });
+    expect(recordAuditEvent).toHaveBeenCalledWith("PUBLISH_FAILED", {
+      requestId: "request-123",
+      publishAttemptId: "attempt-123",
+      error: "missing azure config",
     });
   });
 });
