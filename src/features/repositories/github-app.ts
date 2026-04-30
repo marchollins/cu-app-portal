@@ -1,4 +1,5 @@
 import { createSign } from "node:crypto";
+import sodium from "libsodium-wrappers";
 import type { GitHubRepoVisibility } from "./config";
 
 type FetchLike = typeof fetch;
@@ -24,6 +25,27 @@ type AddRepositoryCollaboratorInput = {
   name: string;
   username: string;
   permission: "pull" | "triage" | "push" | "maintain" | "admin";
+};
+
+type SetActionsSecretInput = {
+  owner: string;
+  name: string;
+  secretName: string;
+  secretValue: string;
+};
+
+type DispatchWorkflowInput = {
+  owner: string;
+  name: string;
+  workflowFileName: string;
+  ref: string;
+};
+
+type GetLatestWorkflowRunInput = {
+  owner: string;
+  name: string;
+  workflowFileName: string;
+  branch: string;
 };
 
 type GitHubBlobResponse = {
@@ -54,6 +76,20 @@ type GitHubRefResponse = {
   object: {
     sha: string;
   };
+};
+
+type GitHubActionsPublicKeyResponse = {
+  key_id: string;
+  key: string;
+};
+
+type GitHubWorkflowRunsResponse = {
+  workflow_runs: Array<{
+    id: number;
+    html_url: string;
+    status: string;
+    conclusion: string | null;
+  }>;
 };
 
 type GitHubApiError = Error & {
@@ -110,6 +146,27 @@ async function readJson<T>(response: Response): Promise<T> {
   return responseJson as T;
 }
 
+async function requireGitHubStatus(response: Response, expectedStatuses: number[]) {
+  if (expectedStatuses.includes(response.status)) {
+    return;
+  }
+
+  if (!response.ok) {
+    await readJson<unknown>(response);
+    return;
+  }
+
+  const statusText = response.statusText ? ` ${response.statusText}` : "";
+
+  throw new Error(
+    `GitHub API request returned unexpected status: ${response.status}${statusText}.`,
+  );
+}
+
+function githubPathSegment(value: string) {
+  return encodeURIComponent(value);
+}
+
 function isRetriableGitHubConflict(error: unknown) {
   return (
     error instanceof Error &&
@@ -122,6 +179,18 @@ function defaultSleep(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+async function encryptGitHubSecret(publicKey: string, secretValue: string) {
+  await sodium.ready;
+  const binaryKey = sodium.from_base64(
+    publicKey,
+    sodium.base64_variants.ORIGINAL,
+  );
+  const binarySecret = sodium.from_string(secretValue);
+  const encrypted = sodium.crypto_box_seal(binarySecret, binaryKey);
+
+  return sodium.to_base64(encrypted, sodium.base64_variants.ORIGINAL);
 }
 
 export function createGitHubAppClient({
@@ -322,6 +391,88 @@ export function createGitHubAppClient({
       return {
         status: "INVITED" as const,
         invitationId: invitation?.id ?? null,
+      };
+    },
+    async setActionsSecret({
+      owner,
+      name,
+      secretName,
+      secretValue,
+    }: SetActionsSecretInput) {
+      const headers = await withInstallationHeaders();
+      const encodedOwner = githubPathSegment(owner);
+      const encodedName = githubPathSegment(name);
+      const key = await readJson<GitHubActionsPublicKeyResponse>(
+        await fetchImpl(
+          `https://api.github.com/repos/${encodedOwner}/${encodedName}/actions/secrets/public-key`,
+          {
+            method: "GET",
+            headers,
+          },
+        ),
+      );
+
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${encodedOwner}/${encodedName}/actions/secrets/${githubPathSegment(secretName)}`,
+        {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({
+            encrypted_value: await encryptGitHubSecret(key.key, secretValue),
+            key_id: key.key_id,
+          }),
+        },
+      );
+
+      await requireGitHubStatus(response, [201, 204]);
+    },
+    async dispatchWorkflow({
+      owner,
+      name,
+      workflowFileName,
+      ref,
+    }: DispatchWorkflowInput) {
+      const headers = await withInstallationHeaders();
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${githubPathSegment(owner)}/${githubPathSegment(name)}/actions/workflows/${githubPathSegment(workflowFileName)}/dispatches`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ref }),
+        },
+      );
+
+      await requireGitHubStatus(response, [204]);
+    },
+    async getLatestWorkflowRun({
+      owner,
+      name,
+      workflowFileName,
+      branch,
+    }: GetLatestWorkflowRunInput) {
+      const headers = await withInstallationHeaders();
+      const data = await readJson<GitHubWorkflowRunsResponse>(
+        await fetchImpl(
+          `https://api.github.com/repos/${githubPathSegment(owner)}/${githubPathSegment(name)}/actions/workflows/${githubPathSegment(workflowFileName)}/runs?branch=${encodeURIComponent(branch)}&per_page=1`,
+          {
+            method: "GET",
+            headers,
+          },
+        ),
+      );
+      const run = data.workflow_runs[0];
+
+      if (!run) {
+        throw new Error(
+          `No GitHub workflow runs found for ${owner}/${name} ${workflowFileName}.`,
+        );
+      }
+
+      return {
+        id: String(run.id),
+        url: run.html_url,
+        status: run.status,
+        conclusion: run.conclusion,
       };
     },
   };
