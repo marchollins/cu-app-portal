@@ -35,6 +35,12 @@ describe("buildArchive", () => {
       zip.file("package.json")?.async("string"),
     ).resolves.toContain('"name": "campus-beta"');
     await expect(
+      zip.file("package.json")?.async("string"),
+    ).resolves.toContain('"next": "15.5.15"');
+    await expect(
+      zip.file("package.json")?.async("string"),
+    ).resolves.toContain('"react": "19.0.0"');
+    await expect(
       zip.file(".env.example")?.async("string"),
     ).resolves.toContain(
       "DATABASE_URL=postgresql://portal:portal@localhost:5432/campus-beta?schema=public",
