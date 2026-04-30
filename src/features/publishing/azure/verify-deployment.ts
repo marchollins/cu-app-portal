@@ -2,6 +2,19 @@ type VerifyOptions = {
   fetchImpl?: typeof fetch;
 };
 
+function isMicrosoftLoginRedirect(location: string | null) {
+  if (!location) {
+    return false;
+  }
+
+  try {
+    return new URL(location).hostname.toLowerCase() ===
+      "login.microsoftonline.com";
+  } catch {
+    return false;
+  }
+}
+
 export async function verifyPublishedUrl(
   publishUrl: string,
   { fetchImpl = fetch }: VerifyOptions = {},
@@ -16,7 +29,7 @@ export async function verifyPublishedUrl(
     response.status === 200 ||
     (response.status >= 300 &&
       response.status < 400 &&
-      location.includes("login.microsoftonline.com"))
+      isMicrosoftLoginRedirect(location))
   ) {
     return { verifiedAt: new Date() };
   }

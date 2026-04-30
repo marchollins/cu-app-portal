@@ -176,11 +176,9 @@ export function createAzurePublishRuntime(deps: RuntimeDeps): PublishRuntime {
     return {
       attempts:
         deps.workflowCompletionPollAttempts ??
-        deps.workflowRunPollAttempts ??
         DEFAULT_WORKFLOW_COMPLETION_POLL_ATTEMPTS,
       intervalMs:
         deps.workflowCompletionPollIntervalMs ??
-        deps.workflowRunPollIntervalMs ??
         DEFAULT_WORKFLOW_COMPLETION_POLL_INTERVAL_MS,
       sleep: deps.sleep ?? defaultSleep,
     };

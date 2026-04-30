@@ -24,6 +24,21 @@ describe("verifyPublishedUrl", () => {
     ).resolves.toEqual({ verifiedAt: expect.any(Date) });
   });
 
+  it("rejects redirects to unrelated hosts with microsoft login in the query", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: {
+          location: "https://example.com/?next=login.microsoftonline.com",
+        },
+      }),
+    );
+
+    await expect(
+      verifyPublishedUrl("https://app.example.test", { fetchImpl }),
+    ).rejects.toThrow(/did not return a healthy response/);
+  });
+
   it("rejects runtime error pages", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response("Application Error", { status: 500 }),

@@ -374,4 +374,41 @@ describe("createAzurePublishRuntime", () => {
     expect(sleep).toHaveBeenCalledTimes(1);
     expect(verifyPublishedUrl).not.toHaveBeenCalled();
   });
+
+  it("does not use workflow discovery poll overrides for completion polling", async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const getWorkflowRun = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "123",
+        url: "https://github.com/org/repo/actions/runs/123",
+        status: "in_progress",
+        conclusion: null,
+      })
+      .mockResolvedValueOnce({
+        id: "123",
+        url: "https://github.com/org/repo/actions/runs/123",
+        status: "completed",
+        conclusion: "success",
+      });
+    const verifyPublishedUrl = vi.fn().mockResolvedValue({
+      verifiedAt: new Date("2026-04-30T12:00:00.000Z"),
+    });
+    const { deps } = createDeps({ getWorkflowRun });
+    const runtime = createAzurePublishRuntime({
+      ...deps,
+      workflowRunPollAttempts: 1,
+      workflowRunPollIntervalMs: 0,
+      sleep,
+      verifyPublishedUrl,
+    });
+
+    await runtime.deployRepository("clx9abc123zzzzzzzzzz");
+    await runtime.verifyDeployment(
+      "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+    );
+
+    expect(getWorkflowRun).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(10_000);
+  });
 });
