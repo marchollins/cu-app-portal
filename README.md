@@ -14,6 +14,8 @@ The current `web-app` template now includes an Azure-first publishing bundle for
 - a GitHub Actions deployment workflow
 - a generated-app Codex publishing skill
 
+Portal-managed Azure publishing for generated apps uses one shared resource group, one shared App Service Plan, and one shared PostgreSQL flexible server. Each published app gets its own Azure Web App and its own PostgreSQL database on that shared server.
+
 ## Local Setup
 
 1. Copy `.env.example` to `.env`.
@@ -39,3 +41,4 @@ The current `web-app` template now includes an Azure-first publishing bundle for
 - [Template authoring](docs/portal/template-authoring.md)
 - [Azure publishing](docs/publishing/azure-app-service.md)
 - [Portal-managed publishing design](docs/superpowers/specs/2026-04-28-portal-managed-publishing-design.md)
+- [Portal Azure publish runtime design](docs/superpowers/specs/2026-04-29-portal-azure-publish-runtime-design.md)

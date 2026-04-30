@@ -9,3 +9,14 @@ describe("README", () => {
     expect(readme).toContain("Microsoft Entra ID");
   });
 });
+
+describe("portal setup docs", () => {
+  it("documents portal-managed azure publish runtime settings", () => {
+    const setup = readFileSync("docs/portal/setup.md", "utf8");
+
+    expect(setup).toContain("AZURE_PUBLISH_RESOURCE_GROUP");
+    expect(setup).toContain("rg-cu-apps-published");
+    expect(setup).toContain("AZURE_PUBLISH_RUNTIME_STACK");
+    expect(setup).toContain("NODE|24-lts");
+  });
+});

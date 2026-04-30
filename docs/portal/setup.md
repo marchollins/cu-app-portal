@@ -35,6 +35,34 @@ Notes for GitHub App setup:
 - Use `GITHUB_APP_INSTALLATIONS_JSON` when different Cedarville orgs need different installation ids, for example `{"cedarville-it":"111","cedarville-apps":"222"}`.
 - `GITHUB_DEFAULT_ORG` must match one of the orgs allowed by `GITHUB_ALLOWED_ORGS`.
 
+### Portal-Managed Azure Publishing
+
+To enable portal-managed Azure publishing for generated user apps, configure the portal with the shared Azure publish target and generated-app auth settings:
+
+- `AZURE_PUBLISH_RESOURCE_GROUP=rg-cu-apps-published`
+- `AZURE_PUBLISH_APP_SERVICE_PLAN=asp-cu-apps-published`
+- `AZURE_PUBLISH_POSTGRES_SERVER=psql-cu-apps-published`
+- `AZURE_PUBLISH_POSTGRES_ADMIN_USER`
+- `AZURE_PUBLISH_POSTGRES_ADMIN_PASSWORD`
+- `AZURE_PUBLISH_LOCATION`
+- `AZURE_PUBLISH_RUNTIME_STACK=NODE|24-lts`
+- `AZURE_PUBLISH_CLIENT_ID`
+- `AZURE_PUBLISH_TENANT_ID`
+- `AZURE_PUBLISH_SUBSCRIPTION_ID`
+- `AZURE_PUBLISH_AUTH_SECRET`
+- `AZURE_PUBLISH_ENTRA_CLIENT_ID`
+- `AZURE_PUBLISH_ENTRA_CLIENT_SECRET`
+- `AZURE_PUBLISH_ENTRA_ISSUER`
+- `AZURE_PUBLISH_ENTRA_APP_OBJECT_ID`
+
+Current v1 design decisions:
+
+- Generated user apps share one Azure resource group: `rg-cu-apps-published`.
+- Generated user apps share one App Service Plan: `asp-cu-apps-published`.
+- Generated user apps share one PostgreSQL flexible server: `psql-cu-apps-published`.
+- Each published app gets its own Azure Web App and its own PostgreSQL database on the shared server.
+- `AZURE_PUBLISH_RUNTIME_STACK` is fixed to `NODE|24-lts` for the current `web-app` template runtime.
+
 ## Local Development Flow
 
 1. Install dependencies with `npm install`.

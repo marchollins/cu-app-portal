@@ -1,10 +1,24 @@
-# Publish to Azure App Service
+# Publish the Portal to Azure App Service
 
-This repository supports one first-class publishing path: GitHub Actions plus Azure App Service for the Next.js portal app, backed by Azure Database for PostgreSQL.
+This document covers publishing the Cedarville App Portal app itself to Azure App Service. That operator path uses GitHub Actions plus Azure App Service for the Next.js portal app, backed by Azure Database for PostgreSQL.
 
-For the active product roadmap, prefer a portal-created managed GitHub repository as the source of truth. Manual local GitHub setup is now a fallback/operator path, not the preferred future UX.
+This is separate from portal-managed publishing for generated user apps. Generated app publishing is orchestrated by the running portal after an app request is created.
 
-## Recommended Path
+## Generated App Publishing
+
+For generated user apps, the portal-managed Azure runtime uses a shared-resource model:
+
+- one shared resource group: `rg-cu-apps-published`
+- one shared App Service Plan: `asp-cu-apps-published`
+- one shared PostgreSQL flexible server: `psql-cu-apps-published`
+- one Azure Web App per published generated app
+- one PostgreSQL database per published generated app
+
+Those settings are documented in [Portal setup](../portal/setup.md). The approved runtime design is in [Portal Azure publish runtime design](../superpowers/specs/2026-04-29-portal-azure-publish-runtime-design.md).
+
+For the active product roadmap, prefer a portal-created managed GitHub repository as the source of truth for generated apps. Manual local GitHub setup is now a fallback/operator path, not the preferred future UX.
+
+## Portal Self-Deployment Path
 
 1. Review `app-portal/deployment-manifest.json`.
 2. Create or connect the GitHub repository.
