@@ -77,7 +77,9 @@ describe("buildArchive", () => {
       zip.file(".github/workflows/deploy-azure-app-service.yml")?.async(
         "string",
       ),
-    ).resolves.toContain('AZURE_WEBAPP_NAME: "campus-beta"');
+    ).resolves.toContain(
+      "AZURE_WEBAPP_NAME: ${{ secrets.AZURE_WEBAPP_NAME }}",
+    );
     await expect(
       zip.file(".github/workflows/deploy-azure-app-service.yml")?.async(
         "string",
@@ -117,15 +119,12 @@ describe("buildArchive", () => {
       archive.files["README.md"],
     );
 
-    const renderedManifest = JSON.parse(
-      await zip.file("app-portal/deployment-manifest.json")!.async("string"),
-    ) as { defaults: { azure: { webApp: string } } };
     const renderedWorkflow = await zip
       .file(".github/workflows/deploy-azure-app-service.yml")!
       .async("string");
 
     expect(renderedWorkflow).toContain(
-      `AZURE_WEBAPP_NAME: "${renderedManifest.defaults.azure.webApp}"`,
+      "AZURE_WEBAPP_NAME: ${{ secrets.AZURE_WEBAPP_NAME }}",
     );
 
     const templateManifest = JSON.parse(

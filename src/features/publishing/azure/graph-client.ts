@@ -66,5 +66,36 @@ export function createMicrosoftGraphClient({
         );
       }
     },
+    async ensureFederatedCredential({
+      applicationAppId,
+      name,
+      repository,
+      branch,
+    }: {
+      applicationAppId: string;
+      name: string;
+      repository: string;
+      branch: string;
+    }) {
+      const response = await fetchImpl(
+        `https://graph.microsoft.com/v1.0/applications(appId='${applicationAppId}')/federatedIdentityCredentials`,
+        {
+          method: "POST",
+          headers: await headers(),
+          body: JSON.stringify({
+            name,
+            issuer: "https://token.actions.githubusercontent.com",
+            subject: `repo:${repository}:ref:refs/heads/${branch}`,
+            audiences: ["api://AzureADTokenExchange"],
+          }),
+        },
+      );
+
+      if (response.status === 409) {
+        return;
+      }
+
+      await readJson<unknown>(response);
+    },
   };
 }

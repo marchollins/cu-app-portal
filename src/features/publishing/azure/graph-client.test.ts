@@ -80,6 +80,55 @@ describe("createMicrosoftGraphClient", () => {
     );
   });
 
+  it("creates a federated credential for a repository branch", async () => {
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(json({ id: "credential-id" }, { status: 201 }));
+    const client = createMicrosoftGraphClient({
+      tokenProvider: async () => "token",
+      fetchImpl,
+    });
+
+    await client.ensureFederatedCredential({
+      applicationAppId: "client-id",
+      name: "github-campus-dashboard-clx9abc1",
+      repository: "cedarville-it/campus-dashboard",
+      branch: "main",
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://graph.microsoft.com/v1.0/applications(appId='client-id')/federatedIdentityCredentials",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "github-campus-dashboard-clx9abc1",
+          issuer: "https://token.actions.githubusercontent.com",
+          subject: "repo:cedarville-it/campus-dashboard:ref:refs/heads/main",
+          audiences: ["api://AzureADTokenExchange"],
+        }),
+      }),
+    );
+  });
+
+  it("treats an existing federated credential as already configured", async () => {
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(text("already exists", { status: 409 }));
+    const client = createMicrosoftGraphClient({
+      tokenProvider: async () => "token",
+      fetchImpl,
+    });
+
+    await expect(
+      client.ensureFederatedCredential({
+        applicationAppId: "client-id",
+        name: "github-campus-dashboard-clx9abc1",
+        repository: "cedarville-it/campus-dashboard",
+        branch: "main",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it("throws the Graph response status and text for non-JSON error bodies", async () => {
     const fetchImpl = vi
       .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()

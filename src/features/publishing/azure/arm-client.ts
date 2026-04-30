@@ -73,5 +73,50 @@ export function createAzureArmClient({
         ),
       );
     },
+    async putAppSettings(input: {
+      resourceGroup: string;
+      name: string;
+      settings: Record<string, string>;
+    }) {
+      await readJson<unknown>(
+        await fetchImpl(
+          resourceUrl(
+            `/resourceGroups/${input.resourceGroup}/providers/Microsoft.Web/sites/${input.name}/config/appsettings`,
+            "2023-12-01",
+          ),
+          {
+            method: "PUT",
+            headers: await headers(),
+            body: JSON.stringify({
+              properties: input.settings,
+            }),
+          },
+        ),
+      );
+    },
+    async putPostgresDatabase(input: {
+      resourceGroup: string;
+      serverName: string;
+      databaseName: string;
+    }) {
+      await readJson<unknown>(
+        await fetchImpl(
+          resourceUrl(
+            `/resourceGroups/${input.resourceGroup}/providers/Microsoft.DBforPostgreSQL/flexibleServers/${input.serverName}/databases/${input.databaseName}`,
+            "2023-06-01-preview",
+          ),
+          {
+            method: "PUT",
+            headers: await headers(),
+            body: JSON.stringify({
+              properties: {
+                charset: "UTF8",
+                collation: "en_US.utf8",
+              },
+            }),
+          },
+        ),
+      );
+    },
   };
 }

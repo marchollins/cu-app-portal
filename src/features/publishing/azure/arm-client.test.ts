@@ -66,6 +66,66 @@ describe("createAzureArmClient", () => {
     );
   });
 
+  it("creates or updates a PostgreSQL database on the shared server", async () => {
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValue(json({ id: "database-id" }));
+    const client = createAzureArmClient({
+      subscriptionId: "sub",
+      tokenProvider: async () => "token",
+      fetchImpl,
+    });
+
+    await client.putPostgresDatabase({
+      resourceGroup: "rg-cu-apps-published",
+      serverName: "psql-cu-apps-published",
+      databaseName: "db_campus_dashboard_clx9abc1",
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://management.azure.com/subscriptions/sub/resourceGroups/rg-cu-apps-published/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-cu-apps-published/databases/db_campus_dashboard_clx9abc1?api-version=2023-06-01-preview",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          properties: { charset: "UTF8", collation: "en_US.utf8" },
+        }),
+      }),
+    );
+  });
+
+  it("creates or updates web app settings", async () => {
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValue(json({ properties: {} }));
+    const client = createAzureArmClient({
+      subscriptionId: "sub",
+      tokenProvider: async () => "token",
+      fetchImpl,
+    });
+
+    await client.putAppSettings({
+      resourceGroup: "rg-cu-apps-published",
+      name: "app-campus-dashboard-clx9abc1",
+      settings: {
+        DATABASE_URL: "postgresql://example",
+        NODE_ENV: "production",
+      },
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://management.azure.com/subscriptions/sub/resourceGroups/rg-cu-apps-published/providers/Microsoft.Web/sites/app-campus-dashboard-clx9abc1/config/appsettings?api-version=2023-12-01",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          properties: {
+            DATABASE_URL: "postgresql://example",
+            NODE_ENV: "production",
+          },
+        }),
+      }),
+    );
+  });
+
   it("throws the ARM response status and text for non-JSON error bodies", async () => {
     const fetchImpl = vi
       .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
