@@ -48,6 +48,9 @@ describe("MyAppsPage", () => {
         publishStatus: "FAILED",
         repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
         publishUrl: null,
+        primaryPublishUrl: null,
+        azureWebAppName: null,
+        publishAttempts: [],
       },
     ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
@@ -71,6 +74,55 @@ describe("MyAppsPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows Azure publish and workflow metadata for listed apps", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
+      {
+        id: "req_789",
+        appName: "Campus Dashboard",
+        generationStatus: "SUCCEEDED",
+        repositoryStatus: "READY",
+        repositoryAccessStatus: "GRANTED",
+        repositoryAccessNote: "GitHub access is ready for @portalstaff.",
+        publishStatus: "DEPLOYING",
+        repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        publishUrl: null,
+        primaryPublishUrl:
+          "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+        azureWebAppName: "app-campus-dashboard-clx9abc1",
+        publishAttempts: [
+          {
+            githubWorkflowRunUrl:
+              "https://github.com/cedarville-it/campus-dashboard/actions/runs/123",
+          },
+        ],
+      },
+    ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(await MyAppsPage());
+
+    expect(
+      screen.getByText(/azure app: app-campus-dashboard-clx9abc1/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", {
+        name: "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+      }),
+    ).toHaveAttribute(
+      "href",
+      "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+    );
+    expect(
+      screen.getByRole("link", { name: /github workflow/i }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/cedarville-it/campus-dashboard/actions/runs/123",
+    );
+  });
+
   it("shows a repo retry action when managed repo bootstrap failed", async () => {
     vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
@@ -84,6 +136,9 @@ describe("MyAppsPage", () => {
         publishStatus: "NOT_STARTED",
         repositoryUrl: null,
         publishUrl: null,
+        primaryPublishUrl: null,
+        azureWebAppName: null,
+        publishAttempts: [],
       },
     ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
     vi.mocked(prisma.user.findUnique).mockResolvedValue({

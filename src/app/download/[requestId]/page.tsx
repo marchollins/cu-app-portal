@@ -67,6 +67,47 @@ function renderRepositoryNote(
   return <p>Last publish note: {publishErrorSummary}</p>;
 }
 
+function getDisplayPublishUrl(
+  primaryPublishUrl: string | null,
+  publishUrl: string | null,
+) {
+  return primaryPublishUrl ?? publishUrl;
+}
+
+function renderPublishMetadata({
+  azureWebAppName,
+  primaryPublishUrl,
+  publishUrl,
+  githubWorkflowRunUrl,
+}: {
+  azureWebAppName: string | null;
+  primaryPublishUrl: string | null;
+  publishUrl: string | null;
+  githubWorkflowRunUrl: string | null;
+}) {
+  const displayPublishUrl = getDisplayPublishUrl(primaryPublishUrl, publishUrl);
+
+  if (!azureWebAppName && !displayPublishUrl && !githubWorkflowRunUrl) {
+    return null;
+  }
+
+  return (
+    <>
+      {azureWebAppName ? <p>Azure app: {azureWebAppName}</p> : null}
+      {displayPublishUrl ? (
+        <p>
+          Publish URL: <a href={displayPublishUrl}>{displayPublishUrl}</a>
+        </p>
+      ) : null}
+      {githubWorkflowRunUrl ? (
+        <p>
+          <a href={githubWorkflowRunUrl}>GitHub workflow</a>
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function renderRepositoryAccessSection(
   requestId: string,
   repositoryStatus: string,
@@ -174,6 +215,10 @@ export default async function DownloadPage({
     },
     include: {
       artifact: true,
+      publishAttempts: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
     },
   });
 
@@ -214,11 +259,13 @@ export default async function DownloadPage({
         <li>Use portal publishing instead of setting up Azure tooling locally.</li>
       </ol>
       <p>Publish status: {appRequest.publishStatus.toLowerCase().replaceAll("_", " ")}</p>
-      {appRequest.publishUrl ? (
-        <p>
-          Published URL: <a href={appRequest.publishUrl}>{appRequest.publishUrl}</a>
-        </p>
-      ) : null}
+      {renderPublishMetadata({
+        azureWebAppName: appRequest.azureWebAppName,
+        primaryPublishUrl: appRequest.primaryPublishUrl,
+        publishUrl: appRequest.publishUrl,
+        githubWorkflowRunUrl:
+          appRequest.publishAttempts[0]?.githubWorkflowRunUrl ?? null,
+      })}
       {renderRepositoryNote(
         appRequest.repositoryStatus,
         appRequest.publishErrorSummary,

@@ -46,10 +46,13 @@ describe("DownloadPage", () => {
       repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
       publishStatus: "NOT_STARTED",
       publishUrl: null,
+      primaryPublishUrl: null,
+      azureWebAppName: null,
       publishErrorSummary: null,
       artifact: {
         id: "artifact-123",
       },
+      publishAttempts: [],
     } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
       githubUsername: "portalstaff",
@@ -83,6 +86,60 @@ describe("DownloadPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows Azure publish and workflow metadata when present", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_789",
+      appName: "Campus Dashboard",
+      repositoryStatus: "READY",
+      repositoryAccessStatus: "GRANTED",
+      repositoryAccessNote: "GitHub access is ready for @portalstaff.",
+      repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+      publishStatus: "DEPLOYING",
+      publishUrl: null,
+      primaryPublishUrl:
+        "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+      azureWebAppName: "app-campus-dashboard-clx9abc1",
+      publishErrorSummary: null,
+      artifact: {
+        id: "artifact-789",
+      },
+      publishAttempts: [
+        {
+          githubWorkflowRunUrl:
+            "https://github.com/cedarville-it/campus-dashboard/actions/runs/123",
+        },
+      ],
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(
+      await DownloadPage({
+        params: Promise.resolve({ requestId: "req_789" }),
+      }),
+    );
+
+    expect(
+      screen.getByText(/azure app: app-campus-dashboard-clx9abc1/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", {
+        name: "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+      }),
+    ).toHaveAttribute(
+      "href",
+      "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+    );
+    expect(
+      screen.getByRole("link", { name: /github workflow/i }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/cedarville-it/campus-dashboard/actions/runs/123",
+    );
+  });
+
   it("shows the stored repo bootstrap error as a repo setup note", async () => {
     vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
@@ -94,10 +151,13 @@ describe("DownloadPage", () => {
       repositoryUrl: null,
       publishStatus: "NOT_STARTED",
       publishUrl: null,
+      primaryPublishUrl: null,
+      azureWebAppName: null,
       publishErrorSummary: "No GitHub App installation is configured for org \"cedarville-it\".",
       artifact: {
         id: "artifact-456",
       },
+      publishAttempts: [],
     } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
       githubUsername: null,

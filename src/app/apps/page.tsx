@@ -52,6 +52,47 @@ function renderAction(requestId: string, repositoryStatus: string, publishStatus
   return <span>Publish is already in progress.</span>;
 }
 
+function getDisplayPublishUrl(
+  primaryPublishUrl: string | null,
+  publishUrl: string | null,
+) {
+  return primaryPublishUrl ?? publishUrl;
+}
+
+function renderPublishMetadata({
+  azureWebAppName,
+  primaryPublishUrl,
+  publishUrl,
+  githubWorkflowRunUrl,
+}: {
+  azureWebAppName: string | null;
+  primaryPublishUrl: string | null;
+  publishUrl: string | null;
+  githubWorkflowRunUrl: string | null;
+}) {
+  const displayPublishUrl = getDisplayPublishUrl(primaryPublishUrl, publishUrl);
+
+  if (!azureWebAppName && !displayPublishUrl && !githubWorkflowRunUrl) {
+    return null;
+  }
+
+  return (
+    <>
+      {azureWebAppName ? <p>Azure app: {azureWebAppName}</p> : null}
+      {displayPublishUrl ? (
+        <p>
+          Publish URL: <a href={displayPublishUrl}>{displayPublishUrl}</a>
+        </p>
+      ) : null}
+      {githubWorkflowRunUrl ? (
+        <p>
+          <a href={githubWorkflowRunUrl}>GitHub workflow</a>
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 export default async function MyAppsPage() {
   const userId = await getCurrentUserIdOrNull();
 
@@ -62,6 +103,12 @@ export default async function MyAppsPage() {
   const appRequests = await prisma.appRequest.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },
+    include: {
+      publishAttempts: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+    },
   });
   const currentUser = await prisma.user.findUnique({
     where: { id: userId },
@@ -141,11 +188,13 @@ export default async function MyAppsPage() {
                   </form>
                 </>
               ) : null}
-              {request.publishUrl ? (
-                <p>
-                  Published URL: <a href={request.publishUrl}>{request.publishUrl}</a>
-                </p>
-              ) : null}
+              {renderPublishMetadata({
+                azureWebAppName: request.azureWebAppName,
+                primaryPublishUrl: request.primaryPublishUrl,
+                publishUrl: request.publishUrl,
+                githubWorkflowRunUrl:
+                  request.publishAttempts[0]?.githubWorkflowRunUrl ?? null,
+              })}
               <p>
                 <Link href={`/download/${request.id}`}>Open app details</Link>
               </p>
