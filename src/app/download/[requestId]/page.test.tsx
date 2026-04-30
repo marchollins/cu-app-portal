@@ -96,7 +96,7 @@ describe("DownloadPage", () => {
       repositoryAccessNote: "GitHub access is ready for @portalstaff.",
       repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
       publishStatus: "DEPLOYING",
-      publishUrl: null,
+      publishUrl: "https://custom.example.edu",
       primaryPublishUrl:
         "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
       azureWebAppName: "app-campus-dashboard-clx9abc1",
@@ -126,12 +126,9 @@ describe("DownloadPage", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", {
-        name: "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+        name: "https://custom.example.edu",
       }),
-    ).toHaveAttribute(
-      "href",
-      "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
-    );
+    ).toHaveAttribute("href", "https://custom.example.edu");
     expect(
       screen.getByRole("link", { name: /github workflow/i }),
     ).toHaveAttribute(

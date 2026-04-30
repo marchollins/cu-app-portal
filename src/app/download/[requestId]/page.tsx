@@ -71,7 +71,7 @@ function getDisplayPublishUrl(
   primaryPublishUrl: string | null,
   publishUrl: string | null,
 ) {
-  return primaryPublishUrl ?? publishUrl;
+  return publishUrl ?? primaryPublishUrl;
 }
 
 function renderPublishMetadata({
