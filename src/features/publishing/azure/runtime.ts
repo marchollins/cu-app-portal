@@ -8,13 +8,17 @@ import type {
 } from "../run-publish-attempt";
 import type { AzurePublishConfig } from "./config";
 import { buildPublishResourceTags, buildPublishTargetNames } from "./naming";
+import { verifyPublishedUrl as defaultVerifyPublishedUrl } from "./verify-deployment";
 
 type RuntimeDeps = {
   config: AzurePublishConfig;
   prisma: Pick<PrismaClient, "appRequest">;
   workflowRunPollAttempts?: number;
   workflowRunPollIntervalMs?: number;
+  workflowCompletionPollAttempts?: number;
+  workflowCompletionPollIntervalMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  verifyPublishedUrl?: typeof defaultVerifyPublishedUrl;
   arm: {
     appServicePlanId(resourceGroup: string, name: string): string;
     putWebApp(input: {
@@ -68,6 +72,15 @@ type RuntimeDeps = {
       workflowFileName: string;
       branch: string;
     }): Promise<{ id: string; url: string }>;
+    getWorkflowRun(input: {
+      owner: string;
+      name: string;
+      runId: string;
+    }): Promise<{
+      status: string;
+      conclusion: string | null;
+      url: string;
+    }>;
   };
 };
 
@@ -89,6 +102,8 @@ const STARTUP_COMMAND = "npm run prisma:migrate:deploy && npm start";
 const ENTRA_CALLBACK_PATH = "/api/auth/callback/microsoft-entra-id";
 const DEFAULT_WORKFLOW_RUN_POLL_ATTEMPTS = 5;
 const DEFAULT_WORKFLOW_RUN_POLL_INTERVAL_MS = 1000;
+const DEFAULT_WORKFLOW_COMPLETION_POLL_ATTEMPTS = 30;
+const DEFAULT_WORKFLOW_COMPLETION_POLL_INTERVAL_MS = 10_000;
 
 async function loadPublishableRequest(
   deps: RuntimeDeps,
@@ -140,6 +155,37 @@ async function defaultSleep(ms: number) {
 }
 
 export function createAzurePublishRuntime(deps: RuntimeDeps): PublishRuntime {
+  let lastDeploymentRun:
+    | {
+        owner: string;
+        name: string;
+        runId: string;
+      }
+    | null = null;
+
+  function workflowRunPollingConfig() {
+    return {
+      attempts: deps.workflowRunPollAttempts ?? DEFAULT_WORKFLOW_RUN_POLL_ATTEMPTS,
+      intervalMs:
+        deps.workflowRunPollIntervalMs ?? DEFAULT_WORKFLOW_RUN_POLL_INTERVAL_MS,
+      sleep: deps.sleep ?? defaultSleep,
+    };
+  }
+
+  function workflowCompletionPollingConfig() {
+    return {
+      attempts:
+        deps.workflowCompletionPollAttempts ??
+        deps.workflowRunPollAttempts ??
+        DEFAULT_WORKFLOW_COMPLETION_POLL_ATTEMPTS,
+      intervalMs:
+        deps.workflowCompletionPollIntervalMs ??
+        deps.workflowRunPollIntervalMs ??
+        DEFAULT_WORKFLOW_COMPLETION_POLL_INTERVAL_MS,
+      sleep: deps.sleep ?? defaultSleep,
+    };
+  }
+
   async function getLatestWorkflowRunOrNull(input: {
     owner: string;
     name: string;
@@ -166,11 +212,7 @@ export function createAzurePublishRuntime(deps: RuntimeDeps): PublishRuntime {
     },
     previousRunId: string | null,
   ) {
-    const attempts =
-      deps.workflowRunPollAttempts ?? DEFAULT_WORKFLOW_RUN_POLL_ATTEMPTS;
-    const intervalMs =
-      deps.workflowRunPollIntervalMs ?? DEFAULT_WORKFLOW_RUN_POLL_INTERVAL_MS;
-    const sleep = deps.sleep ?? defaultSleep;
+    const { attempts, intervalMs, sleep } = workflowRunPollingConfig();
 
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       let run: Awaited<ReturnType<typeof deps.github.getLatestWorkflowRun>>;
@@ -203,6 +245,39 @@ export function createAzurePublishRuntime(deps: RuntimeDeps): PublishRuntime {
 
     throw new Error(
       `GitHub workflow dispatch did not produce a new run for ${input.owner}/${input.name} ${input.workflowFileName}.`,
+    );
+  }
+
+  async function waitForSuccessfulWorkflowRun(input: {
+    owner: string;
+    name: string;
+    runId: string;
+  }) {
+    const { attempts, intervalMs, sleep } = workflowCompletionPollingConfig();
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const run = await deps.github.getWorkflowRun(input);
+
+      if (run.status !== "completed") {
+        if (attempt < attempts - 1) {
+          await sleep(intervalMs);
+          continue;
+        }
+
+        throw new Error(
+          `Deployment workflow did not complete in time. Run id: ${input.runId}`,
+        );
+      }
+
+      if (run.conclusion === "success") {
+        return;
+      }
+
+      throw new Error(`Deployment workflow failed. See ${run.url}`);
+    }
+
+    throw new Error(
+      `Deployment workflow did not complete in time. Run id: ${input.runId}`,
     );
   }
 
@@ -340,6 +415,7 @@ export function createAzurePublishRuntime(deps: RuntimeDeps): PublishRuntime {
         workflowRunInput,
         previousRun?.id ?? null,
       );
+      lastDeploymentRun = { owner, name, runId: run.id };
 
       return {
         publishUrl: appRequest.primaryPublishUrl ?? names.primaryPublishUrl,
@@ -347,8 +423,19 @@ export function createAzurePublishRuntime(deps: RuntimeDeps): PublishRuntime {
         githubWorkflowRunUrl: run.url,
       };
     },
-    async verifyDeployment(): Promise<VerificationResult> {
-      return { verifiedAt: new Date() };
+    async verifyDeployment(publishUrl: string): Promise<VerificationResult> {
+      if (!lastDeploymentRun) {
+        throw new Error(
+          "Deployment verification requires a deployment workflow run.",
+        );
+      }
+
+      await waitForSuccessfulWorkflowRun(lastDeploymentRun);
+
+      const verifyPublishedUrl =
+        deps.verifyPublishedUrl ?? defaultVerifyPublishedUrl;
+
+      return verifyPublishedUrl(publishUrl);
     },
   };
 }

@@ -48,6 +48,12 @@ type GetLatestWorkflowRunInput = {
   branch: string;
 };
 
+type GetWorkflowRunInput = {
+  owner: string;
+  name: string;
+  runId: string;
+};
+
 type GitHubBlobResponse = {
   sha: string;
 };
@@ -90,6 +96,13 @@ type GitHubWorkflowRunsResponse = {
     status: string;
     conclusion: string | null;
   }>;
+};
+
+type GitHubWorkflowRunResponse = {
+  id: number;
+  html_url: string;
+  status: string;
+  conclusion: string | null;
 };
 
 type GitHubApiError = Error & {
@@ -467,6 +480,25 @@ export function createGitHubAppClient({
           `No GitHub workflow runs found for ${owner}/${name} ${workflowFileName}.`,
         );
       }
+
+      return {
+        id: String(run.id),
+        url: run.html_url,
+        status: run.status,
+        conclusion: run.conclusion,
+      };
+    },
+    async getWorkflowRun({ owner, name, runId }: GetWorkflowRunInput) {
+      const headers = await withInstallationHeaders();
+      const run = await readJson<GitHubWorkflowRunResponse>(
+        await fetchImpl(
+          `https://api.github.com/repos/${githubPathSegment(owner)}/${githubPathSegment(name)}/actions/runs/${githubPathSegment(runId)}`,
+          {
+            method: "GET",
+            headers,
+          },
+        ),
+      );
 
       return {
         id: String(run.id),

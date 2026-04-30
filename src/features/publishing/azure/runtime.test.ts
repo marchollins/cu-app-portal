@@ -49,6 +49,12 @@ function createDeps({
     status: "queued",
     conclusion: null,
   }),
+  getWorkflowRun = vi.fn().mockResolvedValue({
+    id: "123",
+    url: "https://github.com/org/repo/actions/runs/123",
+    status: "completed",
+    conclusion: "success",
+  }),
 } = {}) {
   const arm = {
     appServicePlanId: vi.fn().mockReturnValue("/plans/asp-cu-apps-published"),
@@ -68,6 +74,7 @@ function createDeps({
     setActionsSecret: vi.fn().mockResolvedValue(undefined),
     dispatchWorkflow: vi.fn().mockResolvedValue(undefined),
     getLatestWorkflowRun,
+    getWorkflowRun,
   };
   const prisma = {
     appRequest: {
@@ -259,5 +266,112 @@ describe("createAzurePublishRuntime", () => {
       githubWorkflowRunId: "new",
       githubWorkflowRunUrl: "https://github.com/org/repo/actions/runs/new",
     });
+  });
+
+  it("waits for workflow completion before verifying the published URL", async () => {
+    const verifiedAt = new Date("2026-04-30T12:00:00.000Z");
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const getWorkflowRun = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "123",
+        url: "https://github.com/org/repo/actions/runs/123",
+        status: "in_progress",
+        conclusion: null,
+      })
+      .mockResolvedValueOnce({
+        id: "123",
+        url: "https://github.com/org/repo/actions/runs/123",
+        status: "completed",
+        conclusion: "success",
+      });
+    const verifyPublishedUrl = vi.fn().mockResolvedValue({ verifiedAt });
+    const { deps, github } = createDeps({ getWorkflowRun });
+    const runtime = createAzurePublishRuntime({
+      ...deps,
+      workflowCompletionPollIntervalMs: 0,
+      sleep,
+      verifyPublishedUrl,
+    });
+
+    await runtime.deployRepository("clx9abc123zzzzzzzzzz");
+    const result = await runtime.verifyDeployment(
+      "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+    );
+
+    expect(result).toEqual({ verifiedAt });
+    expect(github.getWorkflowRun).toHaveBeenCalledTimes(2);
+    expect(github.getWorkflowRun).toHaveBeenCalledWith({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      runId: "123",
+    });
+    expect(sleep).toHaveBeenCalledWith(0);
+    expect(verifyPublishedUrl).toHaveBeenCalledWith(
+      "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+    );
+    expect(
+      github.getWorkflowRun.mock.invocationCallOrder.at(-1),
+    ).toBeLessThan(verifyPublishedUrl.mock.invocationCallOrder[0]);
+  });
+
+  it("does not verify the published URL when the workflow run fails", async () => {
+    const getWorkflowRun = vi.fn().mockResolvedValue({
+      id: "123",
+      url: "https://github.com/org/repo/actions/runs/123",
+      status: "completed",
+      conclusion: "failure",
+    });
+    const verifyPublishedUrl = vi.fn().mockResolvedValue({
+      verifiedAt: new Date("2026-04-30T12:00:00.000Z"),
+    });
+    const { deps } = createDeps({ getWorkflowRun });
+    const runtime = createAzurePublishRuntime({
+      ...deps,
+      verifyPublishedUrl,
+    });
+
+    await runtime.deployRepository("clx9abc123zzzzzzzzzz");
+
+    await expect(
+      runtime.verifyDeployment(
+        "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+      ),
+    ).rejects.toThrow(
+      "Deployment workflow failed. See https://github.com/org/repo/actions/runs/123",
+    );
+    expect(verifyPublishedUrl).not.toHaveBeenCalled();
+  });
+
+  it("times out when the workflow run never completes", async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const getWorkflowRun = vi.fn().mockResolvedValue({
+      id: "123",
+      url: "https://github.com/org/repo/actions/runs/123",
+      status: "in_progress",
+      conclusion: null,
+    });
+    const verifyPublishedUrl = vi.fn().mockResolvedValue({
+      verifiedAt: new Date("2026-04-30T12:00:00.000Z"),
+    });
+    const { deps } = createDeps({ getWorkflowRun });
+    const runtime = createAzurePublishRuntime({
+      ...deps,
+      workflowCompletionPollAttempts: 2,
+      workflowCompletionPollIntervalMs: 0,
+      sleep,
+      verifyPublishedUrl,
+    });
+
+    await runtime.deployRepository("clx9abc123zzzzzzzzzz");
+
+    await expect(
+      runtime.verifyDeployment(
+        "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+      ),
+    ).rejects.toThrow("Deployment workflow did not complete in time. Run id: 123");
+    expect(getWorkflowRun).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(verifyPublishedUrl).not.toHaveBeenCalled();
   });
 });

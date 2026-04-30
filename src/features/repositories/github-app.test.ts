@@ -165,6 +165,46 @@ describe("createGitHubAppClient", () => {
     });
   });
 
+  it("reads a workflow run by id", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          id: 123456789,
+          html_url:
+            "https://github.com/cedarville-it/campus-dashboard/actions/runs/123456789",
+          status: "completed",
+          conclusion: "success",
+        }),
+      );
+
+    const client = createGitHubAppClient({
+      appId: "12345",
+      privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      installationId: "111",
+      fetchImpl,
+    });
+
+    await expect(
+      client.getWorkflowRun({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        runId: "123456789",
+      }),
+    ).resolves.toEqual({
+      id: "123456789",
+      url: "https://github.com/cedarville-it/campus-dashboard/actions/runs/123456789",
+      status: "completed",
+      conclusion: "success",
+    });
+    expect(fetchImpl).toHaveBeenLastCalledWith(
+      "https://api.github.com/repos/cedarville-it/campus-dashboard/actions/runs/123456789",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("encodes workflow path segments", async () => {
     const { privateKey } = generateKeyPairSync("rsa", {
       modulusLength: 2048,
