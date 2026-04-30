@@ -1,10 +1,32 @@
 import { prisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
 
-type PublishRuntime = {
-  provisionInfrastructure: (appRequestId: string) => Promise<void>;
-  deployRepository: (appRequestId: string) => Promise<{ publishUrl: string }>;
-  verifyDeployment: (publishUrl: string) => Promise<void>;
+export type ProvisionedPublishTarget = {
+  azureResourceGroup: string;
+  azureAppServicePlan: string;
+  azureWebAppName: string;
+  azurePostgresServer: string;
+  azureDatabaseName: string;
+  azureDefaultHostName: string;
+  primaryPublishUrl: string;
+};
+
+export type DeploymentRun = {
+  publishUrl: string;
+  githubWorkflowRunId: string;
+  githubWorkflowRunUrl: string;
+};
+
+export type VerificationResult = {
+  verifiedAt: Date;
+};
+
+export type PublishRuntime = {
+  provisionInfrastructure: (
+    appRequestId: string,
+  ) => Promise<ProvisionedPublishTarget>;
+  deployRepository: (appRequestId: string) => Promise<DeploymentRun>;
+  verifyDeployment: (publishUrl: string) => Promise<VerificationResult>;
 };
 
 const defaultRuntime: PublishRuntime = {
@@ -52,7 +74,14 @@ export async function runPublishAttempt(
   });
 
   try {
-    await runtime.provisionInfrastructure(attempt.appRequestId);
+    const publishTarget = await runtime.provisionInfrastructure(
+      attempt.appRequestId,
+    );
+
+    await prisma.appRequest.update({
+      where: { id: attempt.appRequestId },
+      data: publishTarget,
+    });
 
     await prisma.publishAttempt.update({
       where: { id: attemptId },
@@ -68,7 +97,16 @@ export async function runPublishAttempt(
       },
     });
 
-    const { publishUrl } = await runtime.deployRepository(attempt.appRequestId);
+    const deployment = await runtime.deployRepository(attempt.appRequestId);
+
+    await prisma.publishAttempt.update({
+      where: { id: attemptId },
+      data: {
+        githubWorkflowRunId: deployment.githubWorkflowRunId,
+        githubWorkflowRunUrl: deployment.githubWorkflowRunUrl,
+        deploymentStartedAt: new Date(),
+      },
+    });
 
     await prisma.publishAttempt.update({
       where: { id: attemptId },
@@ -77,7 +115,7 @@ export async function runPublishAttempt(
       },
     });
 
-    await runtime.verifyDeployment(publishUrl);
+    const verification = await runtime.verifyDeployment(deployment.publishUrl);
 
     const completedAt = new Date();
 
@@ -87,6 +125,7 @@ export async function runPublishAttempt(
         status: "SUCCEEDED",
         stage: "COMPLETED",
         finishedAt: completedAt,
+        verifiedAt: verification.verifiedAt,
       },
     });
 
@@ -94,7 +133,7 @@ export async function runPublishAttempt(
       where: { id: attempt.appRequestId },
       data: {
         publishStatus: "SUCCEEDED",
-        publishUrl,
+        publishUrl: deployment.publishUrl,
         publishErrorSummary: null,
         lastPublishedAt: completedAt,
       },
@@ -103,7 +142,7 @@ export async function runPublishAttempt(
     await recordAuditEvent("PUBLISH_SUCCEEDED", {
       requestId: attempt.appRequestId,
       publishAttemptId: attemptId,
-      publishUrl,
+      publishUrl: deployment.publishUrl,
     });
   } catch (error) {
     const errorSummary =

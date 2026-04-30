@@ -57,6 +57,14 @@ model AppRequest {
   publishUrl       String?
   publishErrorSummary String?
   lastPublishedAt  DateTime?
+  azureResourceGroup    String?
+  azureAppServicePlan   String?
+  azureWebAppName       String?
+  azurePostgresServer   String?
+  azureDatabaseName     String?
+  azureDefaultHostName  String?
+  customDomain          String?
+  primaryPublishUrl     String?
   publishedAt      DateTime?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
@@ -86,6 +94,10 @@ model PublishAttempt {
   stage        PublishAttemptStage
   errorSummary String?
   startedAt    DateTime?
+  githubWorkflowRunId  String?
+  githubWorkflowRunUrl String?
+  deploymentStartedAt  DateTime?
+  verifiedAt           DateTime?
   finishedAt   DateTime?
   createdAt    DateTime             @default(now())
   appRequest   AppRequest           @relation(fields: [appRequestId], references: [id])

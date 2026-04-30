@@ -37,11 +37,24 @@ describe("runPublishAttempt", () => {
     } as Awaited<ReturnType<typeof prisma.publishAttempt.findUnique>>);
 
     await runPublishAttempt("attempt-123", {
-      provisionInfrastructure: vi.fn().mockResolvedValue(undefined),
+      provisionInfrastructure: vi.fn().mockResolvedValue({
+        azureResourceGroup: "rg-cu-apps-published",
+        azureAppServicePlan: "asp-cu-apps-published",
+        azureWebAppName: "app-campus-dashboard",
+        azurePostgresServer: "psql-cu-apps-published",
+        azureDatabaseName: "db_campus_dashboard",
+        azureDefaultHostName: "campus-dashboard.azurewebsites.net",
+        primaryPublishUrl: "https://campus-dashboard.azurewebsites.net",
+      }),
       deployRepository: vi.fn().mockResolvedValue({
         publishUrl: "https://campus-dashboard.azurewebsites.net",
+        githubWorkflowRunId: "123456789",
+        githubWorkflowRunUrl:
+          "https://github.com/cedarville-it/campus-dashboard/actions/runs/123456789",
       }),
-      verifyDeployment: vi.fn().mockResolvedValue(undefined),
+      verifyDeployment: vi.fn().mockResolvedValue({
+        verifiedAt: new Date("2026-04-30T12:00:00.000Z"),
+      }),
     });
 
     expect(prisma.appRequest.update).toHaveBeenCalledWith({
@@ -61,6 +74,70 @@ describe("runPublishAttempt", () => {
       data: expect.objectContaining({
         publishStatus: "SUCCEEDED",
         publishUrl: "https://campus-dashboard.azurewebsites.net",
+      }),
+    });
+  });
+
+  it("stores durable azure target and workflow metadata when publishing succeeds", async () => {
+    vi.mocked(prisma.publishAttempt.findUnique).mockResolvedValue({
+      id: "attempt-123",
+      appRequestId: "request-123",
+      appRequest: {
+        id: "request-123",
+        azureWebAppName: "app-campus-dashboard-clx9abc1",
+      },
+    } as Awaited<ReturnType<typeof prisma.publishAttempt.findUnique>>);
+
+    await runPublishAttempt("attempt-123", {
+      provisionInfrastructure: vi.fn().mockResolvedValue({
+        azureResourceGroup: "rg-cu-apps-published",
+        azureAppServicePlan: "asp-cu-apps-published",
+        azureWebAppName: "app-campus-dashboard-clx9abc1",
+        azurePostgresServer: "psql-cu-apps-published",
+        azureDatabaseName: "db_campus_dashboard_clx9abc1",
+        azureDefaultHostName: "app-campus-dashboard-clx9abc1.azurewebsites.net",
+        primaryPublishUrl:
+          "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+      }),
+      deployRepository: vi.fn().mockResolvedValue({
+        publishUrl: "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+        githubWorkflowRunId: "123456789",
+        githubWorkflowRunUrl:
+          "https://github.com/cedarville-it/campus-dashboard/actions/runs/123456789",
+      }),
+      verifyDeployment: vi.fn().mockResolvedValue({
+        verifiedAt: new Date("2026-04-30T12:00:00.000Z"),
+      }),
+    });
+
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-123" },
+      data: expect.objectContaining({
+        azureResourceGroup: "rg-cu-apps-published",
+        azureAppServicePlan: "asp-cu-apps-published",
+        azureWebAppName: "app-campus-dashboard-clx9abc1",
+        azurePostgresServer: "psql-cu-apps-published",
+        azureDatabaseName: "db_campus_dashboard_clx9abc1",
+        azureDefaultHostName: "app-campus-dashboard-clx9abc1.azurewebsites.net",
+        primaryPublishUrl:
+          "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+      }),
+    });
+    expect(prisma.publishAttempt.update).toHaveBeenCalledWith({
+      where: { id: "attempt-123" },
+      data: expect.objectContaining({
+        githubWorkflowRunId: "123456789",
+        githubWorkflowRunUrl:
+          "https://github.com/cedarville-it/campus-dashboard/actions/runs/123456789",
+        deploymentStartedAt: expect.any(Date),
+      }),
+    });
+    expect(prisma.publishAttempt.update).toHaveBeenCalledWith({
+      where: { id: "attempt-123" },
+      data: expect.objectContaining({
+        status: "SUCCEEDED",
+        stage: "COMPLETED",
+        verifiedAt: new Date("2026-04-30T12:00:00.000Z"),
       }),
     });
   });
