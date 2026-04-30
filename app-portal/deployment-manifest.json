@@ -25,7 +25,7 @@
       "resourceGroup": "rg-cu-app-portal",
       "plan": "asp-cu-app-portal-s1",
       "webApp": "cu-app-portal",
-      "runtimeStack": "NODE|20-lts",
+      "runtimeStack": "NODE|24-lts",
       "database": {
         "server": "psql-cu-app-portal-260424",
         "database": "cu-app-portal",

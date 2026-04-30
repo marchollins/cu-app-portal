@@ -84,8 +84,19 @@ describe("buildArchive", () => {
       ),
     ).resolves.toContain("run: npm ci");
     await expect(
+      zip.file(".github/workflows/deploy-azure-app-service.yml")?.async(
+        "string",
+      ),
+    ).resolves.toContain("node-version: 24");
+    await expect(
+      zip.file("package.json")?.async("string"),
+    ).resolves.toContain('"node": ">=24"');
+    await expect(
       zip.file("app-portal/deployment-manifest.json")?.async("string"),
     ).resolves.toContain('"framework": "nextjs"');
+    await expect(
+      zip.file("app-portal/deployment-manifest.json")?.async("string"),
+    ).resolves.toContain('"runtimeStack": "NODE|24-lts"');
     await expect(
       zip.file("app-portal/deployment-manifest.json")?.async("string"),
     ).resolves.toContain('"server": "psql-campus-beta"');

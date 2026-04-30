@@ -4,7 +4,7 @@ This guide explains local development, required environment variables, and datab
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 24+
 - Docker Desktop or another local Docker runtime
 - A PostgreSQL database
 - Microsoft Entra ID application credentials for Cedarville SSO

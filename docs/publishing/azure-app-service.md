@@ -40,7 +40,7 @@ az group create --name rg-cu-app-portal --location eastus
 az postgres flexible-server create --resource-group rg-cu-app-portal --location eastus2 --name psql-cu-app-portal-260424 --admin-user portaladmin --admin-password "replace-me" --sku-name Standard_B1ms --tier Burstable --storage-size 32 --public-access 0.0.0.0
 az postgres flexible-server db create --resource-group rg-cu-app-portal --server-name psql-cu-app-portal-260424 --database-name cu-app-portal
 az appservice plan create --name asp-cu-app-portal-s1 --resource-group rg-cu-app-portal --location eastus2 --is-linux --sku S1
-az webapp create --name cu-app-portal --resource-group rg-cu-app-portal --plan asp-cu-app-portal-s1 --runtime "NODE|20-lts"
+az webapp create --name cu-app-portal --resource-group rg-cu-app-portal --plan asp-cu-app-portal-s1 --runtime "NODE|24-lts"
 az webapp config set --resource-group rg-cu-app-portal --name cu-app-portal --startup-file "npm run prisma:migrate:deploy && npm start"
 ```
 

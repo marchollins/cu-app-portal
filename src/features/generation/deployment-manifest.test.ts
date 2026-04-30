@@ -19,6 +19,7 @@ describe("buildDeploymentManifest", () => {
       runtime: {
         family: "node",
         framework: "nextjs",
+        nodeVersion: "24",
       },
       hosting: {
         provider: "azure",
@@ -31,6 +32,7 @@ describe("buildDeploymentManifest", () => {
         githubRepository: "campus-hub",
         azure: {
           resourceGroup: "rg-campus-hub",
+          runtimeStack: "NODE|24-lts",
           webApp: "campus-hub",
           database: {
             server: "psql-campus-hub",
@@ -82,6 +84,7 @@ describe("buildDeploymentManifest", () => {
       runtime: {
         family: "node",
         framework: "nextjs",
+        nodeVersion: "24",
       },
       hosting: {
         provider: "azure",
@@ -94,6 +97,7 @@ describe("buildDeploymentManifest", () => {
         githubRepository: "app",
         azure: {
           resourceGroup: "rg-app",
+          runtimeStack: "NODE|24-lts",
           webApp: "app",
           database: {
             server: "psql-app",

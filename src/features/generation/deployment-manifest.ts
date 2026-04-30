@@ -13,6 +13,7 @@ export type DeploymentManifest = {
   runtime: {
     family: "node";
     framework: "nextjs";
+    nodeVersion: "24";
   };
   hosting: {
     provider: "azure";
@@ -25,6 +26,7 @@ export type DeploymentManifest = {
     githubRepository: string;
     azure: {
       resourceGroup: string;
+      runtimeStack: "NODE|24-lts";
       webApp: string;
       database: {
         server: string;
@@ -79,6 +81,7 @@ export function buildDeploymentManifest(
     runtime: {
       family: "node",
       framework: "nextjs",
+      nodeVersion: "24",
     },
     hosting: {
       provider: "azure",
@@ -91,6 +94,7 @@ export function buildDeploymentManifest(
       githubRepository: appSlug,
       azure: {
         resourceGroup: `rg-${appSlug}`,
+        runtimeStack: "NODE|24-lts",
         webApp: appSlug,
         database: {
           server: `psql-${appSlug}`,
