@@ -84,7 +84,12 @@ describe("buildArchive", () => {
       zip.file(".github/workflows/deploy-azure-app-service.yml")?.async(
         "string",
       ),
-    ).resolves.toContain("run: npm ci");
+    ).resolves.toContain("if [ -f package-lock.json ]; then");
+    await expect(
+      zip.file(".github/workflows/deploy-azure-app-service.yml")?.async(
+        "string",
+      ),
+    ).resolves.toContain("npm install");
     await expect(
       zip.file(".github/workflows/deploy-azure-app-service.yml")?.async(
         "string",
@@ -125,6 +130,13 @@ describe("buildArchive", () => {
 
     expect(renderedWorkflow).toContain(
       "AZURE_WEBAPP_NAME: ${{ secrets.AZURE_WEBAPP_NAME }}",
+    );
+    expect(renderedWorkflow).toContain(
+      "for file in package-lock.json next.config.js next.config.mjs next.config.ts next-env.d.ts prisma.config.ts; do",
+    );
+    expect(renderedWorkflow).toContain("for dir in public prisma; do");
+    expect(renderedWorkflow).not.toContain(
+      "cp package.json package-lock.json next.config.ts next-env.d.ts prisma.config.ts",
     );
 
     const templateManifest = JSON.parse(

@@ -120,7 +120,7 @@ describe("createAzurePublishRuntime", () => {
       expect.objectContaining({
         name: "app-campus-dashboard-clx9abc1",
         runtimeStack: "NODE|24-lts",
-        startupCommand: "npm run prisma:migrate:deploy && npm start",
+        startupCommand: "npm start",
         tags: expect.objectContaining({
           appRequestId: "clx9abc123zzzzzzzzzz",
           repository: "cedarville-it/campus-dashboard",

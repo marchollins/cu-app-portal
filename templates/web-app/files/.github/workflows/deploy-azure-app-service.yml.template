@@ -24,10 +24,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Build application
         run: npm run build
@@ -38,11 +42,17 @@ jobs:
           mkdir -p "${{ env.DEPLOY_PACKAGE_PATH }}"
           cp -R .next "${{ env.DEPLOY_PACKAGE_PATH }}/.next"
           cp -R node_modules "${{ env.DEPLOY_PACKAGE_PATH }}/node_modules"
-          cp package.json package-lock.json next.config.ts next-env.d.ts prisma.config.ts "${{ env.DEPLOY_PACKAGE_PATH }}/"
-          cp -R prisma "${{ env.DEPLOY_PACKAGE_PATH }}/prisma"
-          if [ -d public ]; then
-            cp -R public "${{ env.DEPLOY_PACKAGE_PATH }}/public"
-          fi
+          cp package.json "${{ env.DEPLOY_PACKAGE_PATH }}/"
+          for file in package-lock.json next.config.js next.config.mjs next.config.ts next-env.d.ts prisma.config.ts; do
+            if [ -f "$file" ]; then
+              cp "$file" "${{ env.DEPLOY_PACKAGE_PATH }}/"
+            fi
+          done
+          for dir in public prisma; do
+            if [ -d "$dir" ]; then
+              cp -R "$dir" "${{ env.DEPLOY_PACKAGE_PATH }}/$dir"
+            fi
+          done
 
       - name: Azure login
         uses: azure/login@v2

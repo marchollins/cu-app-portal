@@ -45,6 +45,7 @@ describe("publishing actions", () => {
     vi.mocked(prisma.publishAttempt.create).mockReset();
     vi.mocked(recordAuditEvent).mockReset();
     vi.mocked(runPublishAttempt).mockReset();
+    vi.mocked(runPublishAttempt).mockResolvedValue(undefined);
     vi.mocked(prisma.$transaction).mockImplementation(async (callback) => {
       if (typeof callback !== "function") {
         throw new Error("Unexpected batch transaction in test.");
@@ -140,6 +141,36 @@ describe("publishing actions", () => {
     expect(runPublishAttempt).toHaveBeenCalledWith("attempt-123");
     expect(consoleError).toHaveBeenCalledWith(
       "Failed to record publish requested audit event.",
+      expect.any(Error),
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it("starts the publish worker without awaiting long-running deployment", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "request-123",
+      userId: "user-123",
+      repositoryStatus: "READY",
+      publishStatus: "NOT_STARTED",
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.publishAttempt.create).mockResolvedValue({
+      id: "attempt-123",
+    } as Awaited<ReturnType<typeof prisma.publishAttempt.create>>);
+    vi.mocked(runPublishAttempt).mockRejectedValue(
+      new Error("background deployment failed"),
+    );
+
+    await expect(publishToAzureAction("request-123")).resolves.toBeUndefined();
+    await Promise.resolve();
+
+    expect(runPublishAttempt).toHaveBeenCalledWith("attempt-123");
+    expect(consoleError).toHaveBeenCalledWith(
+      "Publish worker failed after queueing.",
       expect.any(Error),
     );
 

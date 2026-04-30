@@ -35,7 +35,7 @@ describe("createAzureArmClient", () => {
       appServicePlanId:
         "/subscriptions/sub/resourceGroups/rg-cu-apps-published/providers/Microsoft.Web/serverfarms/asp-cu-apps-published",
       runtimeStack: "NODE|24-lts",
-      startupCommand: "npm run prisma:migrate:deploy && npm start",
+      startupCommand: "npm start",
       tags: { managedBy: "cu-app-portal", appRequestId: "request-123" },
     });
 
@@ -58,7 +58,7 @@ describe("createAzureArmClient", () => {
             httpsOnly: true,
             siteConfig: {
               linuxFxVersion: "NODE|24-lts",
-              appCommandLine: "npm run prisma:migrate:deploy && npm start",
+              appCommandLine: "npm start",
             },
           },
         }),
@@ -144,7 +144,7 @@ describe("createAzureArmClient", () => {
         appServicePlanId:
           "/subscriptions/sub/resourceGroups/rg-cu-apps-published/providers/Microsoft.Web/serverfarms/asp-cu-apps-published",
         runtimeStack: "NODE|24-lts",
-        startupCommand: "npm run prisma:migrate:deploy && npm start",
+        startupCommand: "npm start",
         tags: { managedBy: "cu-app-portal", appRequestId: "request-123" },
       }),
     ).rejects.toThrow("Azure ARM request failed: 400 plain ARM failure");

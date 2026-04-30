@@ -12,6 +12,10 @@ vi.mock("next/navigation", () => ({
   notFound: mockNotFound,
 }));
 
+vi.mock("@/app/create/actions", () => ({
+  createAppAction: vi.fn(),
+}));
+
 vi.mock("@/features/templates/catalog", () => ({
   getActiveTemplateBySlug: mockGetActiveTemplateBySlug,
 }));

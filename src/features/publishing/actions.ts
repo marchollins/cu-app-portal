@@ -50,6 +50,12 @@ function revalidatePublishViews(requestId: string) {
   }
 }
 
+function startPublishWorker(attemptId: string) {
+  void runPublishAttempt(attemptId).catch((error) => {
+    console.error("Publish worker failed after queueing.", error);
+  });
+}
+
 async function queuePublishAttempt(
   requestId: string,
   allowedStatuses: QueueablePublishStatus[],
@@ -105,7 +111,7 @@ export async function publishToAzureAction(requestId: string) {
     "SUCCEEDED",
   ]);
 
-  await runPublishAttempt(attemptId);
+  startPublishWorker(attemptId);
 }
 
 export async function retryPublishAction(requestId: string) {
@@ -117,5 +123,5 @@ export async function retryPublishAction(requestId: string) {
 
   const attemptId = await queuePublishAttempt(requestId, ["FAILED"]);
 
-  await runPublishAttempt(attemptId);
+  startPublishWorker(attemptId);
 }

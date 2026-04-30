@@ -98,7 +98,7 @@ type PublishableAppRequest = {
 };
 
 const WORKFLOW_FILE_NAME = "deploy-azure-app-service.yml";
-const STARTUP_COMMAND = "npm run prisma:migrate:deploy && npm start";
+const STARTUP_COMMAND = "npm start";
 const ENTRA_CALLBACK_PATH = "/api/auth/callback/microsoft-entra-id";
 const DEFAULT_WORKFLOW_RUN_POLL_ATTEMPTS = 5;
 const DEFAULT_WORKFLOW_RUN_POLL_INTERVAL_MS = 1000;
