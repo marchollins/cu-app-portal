@@ -225,8 +225,6 @@ export async function createAppAction(formData: FormData) {
       requestId: request.id,
       supportReference,
     });
-
-    redirect(`/download/${request.id}`);
   } catch (error) {
     if (savedStoragePath) {
       await deleteArtifact(savedStoragePath);
@@ -245,4 +243,6 @@ export async function createAppAction(formData: FormData) {
 
     throw error;
   }
+
+  redirect(`/download/${request.id}`);
 }

@@ -211,6 +211,70 @@ describe("createAppAction", () => {
     expect(mockRedirect).toHaveBeenCalledWith("/download/request-123");
   });
 
+  it("does not mark generation failed when Next redirects after success", async () => {
+    const redirectError = new Error("NEXT_REDIRECT");
+    const formData = new FormData();
+    formData.set("templateSlug", "web-app");
+    formData.set("appName", "Campus Dashboard");
+    formData.set("description", "Shows campus metrics.");
+    formData.set("hostingTarget", "Azure App Service");
+
+    mockRedirect.mockImplementation(() => {
+      throw redirectError;
+    });
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: null,
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+    vi.mocked(prisma.template.upsert).mockResolvedValue({
+      id: "template-db-123",
+    } as Awaited<ReturnType<typeof prisma.template.upsert>>);
+    vi.mocked(prisma.appRequest.create).mockResolvedValue({
+      id: "request-123",
+    } as Awaited<ReturnType<typeof prisma.appRequest.create>>);
+    vi.mocked(buildArchive).mockResolvedValue({
+      buffer: Buffer.from("zip"),
+      files: {
+        "README.md": "# Campus Dashboard\n",
+      },
+      filename: "campus-dashboard.zip",
+    });
+    vi.mocked(saveArtifact).mockResolvedValue(
+      "/tmp/.artifacts/campus-dashboard.zip",
+    );
+    vi.mocked(prisma.generatedArtifact.create).mockResolvedValue({
+      id: "artifact-123",
+    } as Awaited<ReturnType<typeof prisma.generatedArtifact.create>>);
+    vi.mocked(bootstrapManagedRepository).mockResolvedValue({
+      provider: "GITHUB",
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      url: "https://github.com/cedarville-it/campus-dashboard",
+      defaultBranch: "main",
+      visibility: "private",
+    });
+
+    await expect(createAppAction(formData)).rejects.toThrow(redirectError);
+
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-123" },
+      data: { generationStatus: "SUCCEEDED" },
+    });
+    expect(prisma.appRequest.update).not.toHaveBeenCalledWith({
+      where: { id: "request-123" },
+      data: { generationStatus: "FAILED" },
+    });
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      "APP_REQUEST_SUCCEEDED",
+      expect.objectContaining({ requestId: "request-123" }),
+    );
+    expect(recordAuditEvent).not.toHaveBeenCalledWith(
+      "APP_REQUEST_FAILED",
+      expect.anything(),
+    );
+    expect(mockRedirect).toHaveBeenCalledWith("/download/request-123");
+  });
+
   it("marks the request failed when archive generation throws", async () => {
     const formData = new FormData();
     formData.set("templateSlug", "web-app");
