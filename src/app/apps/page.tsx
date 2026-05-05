@@ -2,7 +2,6 @@ import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { deleteAppAction } from "@/features/app-deletion/actions";
-import { LogoutButton } from "@/features/auth/logout-button";
 import { getCurrentUserIdOrNull } from "@/features/app-requests/current-user";
 import {
   publishToAzureAction,
@@ -14,52 +13,21 @@ import {
 } from "@/features/repositories/actions";
 import { buildCodexHandoffPrompt } from "@/features/repositories/codex-handoff";
 import { CopyCodexHandoffButton } from "@/features/repositories/copy-codex-handoff-button";
+import { PendingSubmitButton } from "@/features/forms/pending-submit-button";
 import { prisma } from "@/lib/db";
 
-function renderAction(requestId: string, repositoryStatus: string, publishStatus: string) {
-  if (repositoryStatus === "DELETED") {
-    return <span>The managed repo has been deleted.</span>;
+type BadgeVariant = "success" | "error" | "warning" | "info" | "default";
+
+function statusBadge(status: string): { label: string; variant: BadgeVariant } {
+  const s = status.toLowerCase();
+  if (s === "ready" || s === "succeeded" || s === "granted" || s === "completed") {
+    return { label: formatStatus(status), variant: "success" };
   }
-
-  if (repositoryStatus === "FAILED") {
-    const retryAction = retryRepositoryBootstrapAction.bind(null, requestId);
-
-    return (
-      <form action={retryAction}>
-        <button type="submit">Retry Repo Setup</button>
-      </form>
-    );
-  }
-
-  if (repositoryStatus !== "READY") {
-    return <span>Portal publish unavailable until the managed repo is ready.</span>;
-  }
-
-  if (publishStatus === "FAILED") {
-    const retryAction = retryPublishAction.bind(null, requestId);
-
-    return (
-      <form action={retryAction}>
-        <button type="submit">Retry Publish</button>
-      </form>
-    );
-  }
-
-  if (publishStatus === "DELETED") {
-    return <span>The Azure deployment has been deleted.</span>;
-  }
-
-  if (publishStatus === "NOT_STARTED" || publishStatus === "SUCCEEDED") {
-    const publishAction = publishToAzureAction.bind(null, requestId);
-
-    return (
-      <form action={publishAction}>
-        <button type="submit">Publish to Azure</button>
-      </form>
-    );
-  }
-
-  return <span>Publish is already in progress.</span>;
+  if (s === "failed") return { label: "Failed", variant: "error" };
+  if (s === "deleted") return { label: "Deleted", variant: "default" };
+  if (s === "not_started") return { label: "Not started", variant: "default" };
+  if (s === "invited") return { label: "Invited", variant: "info" };
+  return { label: formatStatus(status), variant: "info" };
 }
 
 function formatStatus(status: string) {
@@ -73,38 +41,62 @@ function getDisplayPublishUrl(
   return publishUrl ?? primaryPublishUrl;
 }
 
-function renderPublishMetadata({
-  azureWebAppName,
-  primaryPublishUrl,
-  publishUrl,
-  githubWorkflowRunUrl,
-}: {
-  azureWebAppName: string | null;
-  primaryPublishUrl: string | null;
-  publishUrl: string | null;
-  githubWorkflowRunUrl: string | null;
-}) {
-  const displayPublishUrl = getDisplayPublishUrl(primaryPublishUrl, publishUrl);
-
-  if (!azureWebAppName && !displayPublishUrl && !githubWorkflowRunUrl) {
-    return null;
+function renderActionButton(requestId: string, repositoryStatus: string, publishStatus: string) {
+  if (repositoryStatus === "DELETED") {
+    return <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>Repo deleted</span>;
   }
 
-  return (
-    <>
-      {azureWebAppName ? <p>Azure app: {azureWebAppName}</p> : null}
-      {displayPublishUrl ? (
-        <p>
-          Publish URL: <a href={displayPublishUrl}>{displayPublishUrl}</a>
-        </p>
-      ) : null}
-      {githubWorkflowRunUrl ? (
-        <p>
-          <a href={githubWorkflowRunUrl}>GitHub workflow</a>
-        </p>
-      ) : null}
-    </>
-  );
+  if (repositoryStatus === "FAILED") {
+    const retryAction = retryRepositoryBootstrapAction.bind(null, requestId);
+    return (
+      <form action={retryAction}>
+        <PendingSubmitButton
+          idleLabel="Retry Repo Setup"
+          pendingLabel="Retrying..."
+          statusText="Retrying managed repo setup…"
+          variant="primary"
+        />
+      </form>
+    );
+  }
+
+  if (repositoryStatus !== "READY") {
+    return <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>Awaiting repo setup</span>;
+  }
+
+  if (publishStatus === "FAILED") {
+    const retryAction = retryPublishAction.bind(null, requestId);
+    return (
+      <form action={retryAction}>
+        <PendingSubmitButton
+          idleLabel="Retry Publish"
+          pendingLabel="Retrying..."
+          statusText="Retrying publish…"
+          variant="primary"
+        />
+      </form>
+    );
+  }
+
+  if (publishStatus === "DELETED") {
+    return <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>Deployment deleted</span>;
+  }
+
+  if (publishStatus === "NOT_STARTED" || publishStatus === "SUCCEEDED") {
+    const publishAction = publishToAzureAction.bind(null, requestId);
+    return (
+      <form action={publishAction}>
+        <PendingSubmitButton
+          idleLabel="Publish to Azure"
+          pendingLabel="Publishing..."
+          statusText="Publishing to Azure. This can take a few minutes."
+          variant="primary-solid"
+        />
+      </form>
+    );
+  }
+
+  return <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>Publish in progress…</span>;
 }
 
 function renderDeletePanel(request: {
@@ -127,51 +119,60 @@ function renderDeletePanel(request: {
   return (
     <details className="delete-panel">
       <summary>Delete App</summary>
-      <form action={deleteAction}>
-        <p className="delete-warning">
-          Anything you leave unchecked must be deleted manually later.
-        </p>
-        <fieldset>
-          <legend>Resources to delete</legend>
+      <div className="delete-panel__content">
+        <form action={deleteAction} className="form-stack">
+          <p className="delete-warning">
+            Anything you leave unchecked must be deleted manually later.
+          </p>
+          <fieldset>
+            <legend>Resources to delete</legend>
+            <label>
+              <input name="deletePortal" type="checkbox" />
+              Delete portal record and generated ZIP
+            </label>
+            {canDeleteGitHub ? (
+              <label>
+                <input name="deleteGithub" type="checkbox" />
+                Delete GitHub repository{" "}
+                <code style={{ fontSize: "0.875em" }}>
+                  {request.repositoryOwner}/{request.repositoryName}
+                </code>
+              </label>
+            ) : (
+              <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", margin: 0 }}>
+                GitHub repository already deleted or not tracked.
+              </p>
+            )}
+            {canDeleteAzure ? (
+              <label>
+                <input name="deleteAzure" type="checkbox" />
+                <span>
+                  Delete Azure deployment
+                  {request.azureWebAppName ? (
+                    <>: Web App {request.azureWebAppName}</>
+                  ) : null}
+                  {request.azureDatabaseName ? (
+                    <> and PostgreSQL database {request.azureDatabaseName}</>
+                  ) : null}
+                </span>
+              </label>
+            ) : (
+              <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", margin: 0 }}>
+                Azure deployment already deleted or not tracked.
+              </p>
+            )}
+          </fieldset>
           <label>
-            <input name="deletePortal" type="checkbox" />
-            Delete portal record and generated ZIP
+            <input name="confirmDelete" type="checkbox" required />
+            I understand selected resources will be deleted.
           </label>
-          {canDeleteGitHub ? (
-            <label>
-              <input name="deleteGithub" type="checkbox" />
-              Delete GitHub repository{" "}
-              {`${request.repositoryOwner}/${request.repositoryName}`}
-            </label>
-          ) : (
-            <p>GitHub repository is already deleted or not tracked.</p>
-          )}
-          {canDeleteAzure ? (
-            <label>
-              <input name="deleteAzure" type="checkbox" />
-              <span>
-                Delete Azure deployment
-                {request.azureWebAppName ? (
-                  <>: Web App {request.azureWebAppName}</>
-                ) : null}
-                {request.azureDatabaseName ? (
-                  <>
-                    {" "}
-                    and PostgreSQL database {request.azureDatabaseName}
-                  </>
-                ) : null}
-              </span>
-            </label>
-          ) : (
-            <p>Azure deployment is already deleted or not tracked.</p>
-          )}
-        </fieldset>
-        <label>
-          <input name="confirmDelete" type="checkbox" required />
-          I understand selected resources will be deleted.
-        </label>
-        <button type="submit">Delete Selected Resources</button>
-      </form>
+          <div>
+            <button type="submit" className="btn btn--danger btn--sm">
+              Delete Selected Resources
+            </button>
+          </div>
+        </form>
+      </div>
     </details>
   );
 }
@@ -202,110 +203,163 @@ export default async function MyAppsPage() {
     <main>
       <nav aria-label="Breadcrumb" className="breadcrumb">
         <Link href="/">Home</Link>
-        <span aria-hidden="true">/</span>
+        <span className="breadcrumb__sep" aria-hidden="true">/</span>
         <Link href="/create">Create New App</Link>
-        <span aria-hidden="true">/</span>
+        <span className="breadcrumb__sep" aria-hidden="true">/</span>
         <span aria-current="page">My Apps</span>
       </nav>
-      <LogoutButton />
-      <h1>My Apps</h1>
-      <p>Revisit your generated apps, managed repos, and portal publish status.</p>
+
+      <div className="page-header" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+        <div>
+          <h1>My Apps</h1>
+          <p>Manage your generated apps, repositories, and Azure deployments.</p>
+        </div>
+        <Link href="/create" className="btn btn--primary-solid btn--sm">
+          + Create New App
+        </Link>
+      </div>
+
       {appRequests.length === 0 ? (
-        <p>No app requests yet.</p>
+        <div className="empty-state">
+          <div className="empty-state__icon">📦</div>
+          <div className="empty-state__title">No apps yet</div>
+          <p className="empty-state__desc">
+            Create your first Cedarville-approved app to get started.
+          </p>
+          <Link href="/create" className="btn btn--primary-solid">
+            Create New App
+          </Link>
+        </div>
       ) : (
-        <ul>
-          {appRequests.map((request) => (
-            <li key={request.id}>
-              <h2>{request.appName}</h2>
-              <p>Generation: {request.generationStatus.toLowerCase()}</p>
-              <p>Repo: {formatStatus(request.repositoryStatus)}</p>
-              <p>
-                Repo access: {formatStatus(request.repositoryAccessStatus)}
-              </p>
-              <p>Publish: {formatStatus(request.publishStatus)}</p>
-              {request.repositoryUrl ? (
-                <>
-                  <p>
-                    Repo URL: <a href={request.repositoryUrl}>{request.repositoryUrl}</a>
-                  </p>
-                  <p>
-                    <CopyCodexHandoffButton
-                      prompt={buildCodexHandoffPrompt(
-                        request.repositoryUrl,
-                        request.appName,
-                        request.id,
-                      )}
-                    />
-                  </p>
-                </>
-              ) : null}
-              {request.repositoryStatus === "READY" &&
-              request.repositoryAccessStatus !== "GRANTED" ? (
-                <>
-                  <p>
-                    Need GitHub access for Codex? Create an account at{" "}
-                    <a
-                      href="https://github.com/signup"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      GitHub sign up
-                    </a>
-                    , then enter your username here.
-                  </p>
-                  {request.repositoryAccessNote ? (
-                    <p>Repo access note: {request.repositoryAccessNote}</p>
+        <div className="grid grid--2" style={{ gap: "1.25rem" }}>
+          {appRequests.map((request) => {
+            const displayPublishUrl = getDisplayPublishUrl(
+              request.primaryPublishUrl,
+              request.publishUrl,
+            );
+            const genBadge = statusBadge(request.generationStatus);
+            const repoBadge = statusBadge(request.repositoryStatus);
+            const pubBadge = statusBadge(request.publishStatus);
+            const accessBadge = statusBadge(request.repositoryAccessStatus);
+
+            return (
+              <div key={request.id} className="app-card">
+                <div className="app-card__header">
+                  <h2 className="app-card__name">{request.appName}</h2>
+                </div>
+
+                <div className="app-card__body">
+                  <div className="app-card__statuses">
+                    <span className={`badge badge--${genBadge.variant}`} title="Generation">
+                      Gen: {genBadge.label}
+                    </span>
+                    <span className={`badge badge--${repoBadge.variant}`} title="Repository">
+                      Repo: {repoBadge.label}
+                    </span>
+                    <span className={`badge badge--${pubBadge.variant}`} title="Publish">
+                      Publish: {pubBadge.label}
+                    </span>
+                    <span className={`badge badge--${accessBadge.variant}`} title="Repo Access">
+                      Repo access: {accessBadge.label}
+                    </span>
+                  </div>
+
+                  <div className="status-table">
+                    {request.repositoryUrl ? (
+                      <div className="status-row">
+                        <span className="status-row__label">Repository</span>
+                        <a href={request.repositoryUrl} target="_blank" rel="noreferrer" className="meta-link">
+                          {request.repositoryUrl.replace("https://github.com/", "")}
+                        </a>
+                      </div>
+                    ) : null}
+                    {request.azureWebAppName ? (
+                      <div className="status-row">
+                        Azure app: {request.azureWebAppName}
+                      </div>
+                    ) : null}
+                    {displayPublishUrl ? (
+                      <div className="status-row">
+                        <a href={displayPublishUrl} target="_blank" rel="noreferrer" className="meta-link">
+                          {displayPublishUrl}
+                        </a>
+                      </div>
+                    ) : null}
+                    {request.publishAttempts[0]?.githubWorkflowRunUrl ? (
+                      <div className="status-row">
+                        <a href={request.publishAttempts[0].githubWorkflowRunUrl} target="_blank" rel="noreferrer" className="meta-link">
+                          GitHub workflow
+                        </a>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {request.repositoryStatus === "READY" &&
+                  request.repositoryAccessStatus !== "GRANTED" ? (
+                    <div style={{ marginTop: "1rem" }}>
+                      <p style={{ fontSize: "0.875rem", marginBottom: "0.75rem" }}>
+                        Need GitHub access for Codex?{" "}
+                        <a href="https://github.com/signup" target="_blank" rel="noreferrer">
+                          Create a GitHub account
+                        </a>{" "}
+                        then enter your username below.
+                      </p>
+                      <form
+                        action={saveGitHubUsernameAndGrantAccessAction.bind(null, request.id)}
+                        style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}
+                      >
+                        <input
+                          name="githubUsername"
+                          type="text"
+                          required
+                          placeholder="GitHub username"
+                          defaultValue={currentUser?.githubUsername ?? ""}
+                          className="form-control"
+                          style={{ maxWidth: "220px" }}
+                        />
+                        <button type="submit" className="btn btn--secondary-solid btn--sm">
+                          {request.repositoryAccessStatus === "INVITED"
+                            ? "Resend Invite"
+                            : "Grant Access"}
+                        </button>
+                      </form>
+                    </div>
                   ) : null}
-                  <form
-                    action={saveGitHubUsernameAndGrantAccessAction.bind(
-                      null,
-                      request.id,
-                    )}
-                  >
-                    <label>
-                      GitHub Username
-                      <input
-                        name="githubUsername"
-                        type="text"
-                        required
-                        defaultValue={currentUser?.githubUsername ?? ""}
+
+                  <div className="app-card__actions">
+                    <Link href={`/download/${request.id}`} className="btn btn--ghost btn--sm">
+                      App Details
+                    </Link>
+                    {request.repositoryUrl ? (
+                      <CopyCodexHandoffButton
+                        prompt={buildCodexHandoffPrompt(
+                          request.repositoryUrl,
+                          request.appName,
+                          request.id,
+                        )}
                       />
-                    </label>
-                    <button type="submit">
-                      {request.repositoryAccessStatus === "INVITED"
-                        ? "Resend Repo Access Invite"
-                        : "Save Username and Grant Repo Access"}
-                    </button>
-                  </form>
-                </>
-              ) : null}
-              {renderPublishMetadata({
-                azureWebAppName: request.azureWebAppName,
-                primaryPublishUrl: request.primaryPublishUrl,
-                publishUrl: request.publishUrl,
-                githubWorkflowRunUrl:
-                  request.publishAttempts[0]?.githubWorkflowRunUrl ?? null,
-              })}
-              <p>
-                <Link href={`/download/${request.id}`}>Open app details</Link>
-              </p>
-              {renderAction(
-                request.id,
-                request.repositoryStatus,
-                request.publishStatus,
-              )}
-              {renderDeletePanel({
-                id: request.id,
-                repositoryOwner: request.repositoryOwner,
-                repositoryName: request.repositoryName,
-                repositoryStatus: request.repositoryStatus,
-                publishStatus: request.publishStatus,
-                azureWebAppName: request.azureWebAppName,
-                azureDatabaseName: request.azureDatabaseName,
-              })}
-            </li>
-          ))}
-        </ul>
+                    ) : null}
+                    {renderActionButton(
+                      request.id,
+                      request.repositoryStatus,
+                      request.publishStatus,
+                    )}
+                  </div>
+
+                  {renderDeletePanel({
+                    id: request.id,
+                    repositoryOwner: request.repositoryOwner,
+                    repositoryName: request.repositoryName,
+                    repositoryStatus: request.repositoryStatus,
+                    publishStatus: request.publishStatus,
+                    azureWebAppName: request.azureWebAppName,
+                    azureDatabaseName: request.azureDatabaseName,
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </main>
   );

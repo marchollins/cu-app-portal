@@ -87,9 +87,6 @@ describe("DownloadPage", () => {
       screen.getByRole("heading", { name: /your app is ready/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /log out/i }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByText(/managed repo ready/i),
     ).toBeInTheDocument();
     expect(

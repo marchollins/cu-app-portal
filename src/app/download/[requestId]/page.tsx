@@ -6,7 +6,6 @@ import {
   publishToAzureAction,
   retryPublishAction,
 } from "@/features/publishing/actions";
-import { LogoutButton } from "@/features/auth/logout-button";
 import {
   retryRepositoryBootstrapAction,
   saveGitHubUsernameAndGrantAccessAction,
@@ -16,60 +15,20 @@ import { buildCodexHandoffPrompt } from "@/features/repositories/codex-handoff";
 import { CopyCodexHandoffButton } from "@/features/repositories/copy-codex-handoff-button";
 import { prisma } from "@/lib/db";
 
-function renderRepositoryStatus(
-  status: string,
-  repositoryUrl: string | null,
-  appName: string,
-  requestId: string,
-) {
-  if (status === "READY" && repositoryUrl) {
-    const codexPrompt = buildCodexHandoffPrompt(
-      repositoryUrl,
-      appName,
-      requestId,
-    );
-
-    return (
-      <>
-        <p>
-          Managed repo ready:{" "}
-          <a href={repositoryUrl} target="_blank" rel="noreferrer">
-            {repositoryUrl}
-          </a>
-        </p>
-        <p>
-          <CopyCodexHandoffButton prompt={codexPrompt} />
-        </p>
-      </>
-    );
-  }
-
-  if (status === "FAILED") {
-    return (
-      <p>
-        Repo setup failed. The ZIP is still available, and an operator may need
-        to fix the GitHub App or org configuration before portal publishing can
-        continue.
-      </p>
-    );
-  }
-
-  return <p>Repo setup in progress.</p>;
+function formatStatus(status: string) {
+  return status.toLowerCase().replaceAll("_", " ");
 }
 
-function renderRepositoryNote(
-  repositoryStatus: string,
-  publishErrorSummary: string | null,
-) {
-  if (!publishErrorSummary) {
-    return null;
-  }
+type BadgeVariant = "success" | "error" | "warning" | "info" | "default";
 
-  if (repositoryStatus === "FAILED") {
-    return <p>Repo setup note: {publishErrorSummary}</p>;
+function publishBadge(status: string): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "SUCCEEDED": return { label: "Published", variant: "success" };
+    case "FAILED": return { label: "Failed", variant: "error" };
+    case "IN_PROGRESS": return { label: "In progress", variant: "info" };
+    case "DELETED": return { label: "Deleted", variant: "default" };
+    default: return { label: formatStatus(status), variant: "default" };
   }
-
-  return <p>Last publish note: {publishErrorSummary}</p>;
 }
 
 function getDisplayPublishUrl(
@@ -79,130 +38,56 @@ function getDisplayPublishUrl(
   return publishUrl ?? primaryPublishUrl;
 }
 
-function renderPublishMetadata({
-  azureWebAppName,
-  primaryPublishUrl,
-  publishUrl,
-  githubWorkflowRunUrl,
-}: {
-  azureWebAppName: string | null;
-  primaryPublishUrl: string | null;
-  publishUrl: string | null;
-  githubWorkflowRunUrl: string | null;
-}) {
-  const displayPublishUrl = getDisplayPublishUrl(primaryPublishUrl, publishUrl);
-
-  if (!azureWebAppName && !displayPublishUrl && !githubWorkflowRunUrl) {
-    return null;
-  }
-
-  return (
-    <>
-      {azureWebAppName ? <p>Azure app: {azureWebAppName}</p> : null}
-      {displayPublishUrl ? (
-        <p>
-          Publish URL: <a href={displayPublishUrl}>{displayPublishUrl}</a>
-        </p>
-      ) : null}
-      {githubWorkflowRunUrl ? (
-        <p>
-          <a href={githubWorkflowRunUrl}>GitHub workflow</a>
-        </p>
-      ) : null}
-    </>
-  );
-}
-
-function renderRepositoryAccessSection(
-  requestId: string,
-  repositoryStatus: string,
-  repositoryAccessStatus: string,
-  repositoryAccessNote: string | null,
-  githubUsername: string | null,
-) {
-  if (repositoryStatus !== "READY") {
-    return null;
-  }
-
-  if (repositoryAccessStatus === "GRANTED") {
-    return <p>Repo access granted{githubUsername ? ` for @${githubUsername}` : ""}.</p>;
-  }
-
-  const grantAccessAction = saveGitHubUsernameAndGrantAccessAction.bind(
-    null,
-    requestId,
-  );
-
-  return (
-    <>
-      <p>
-        Need GitHub access for Codex? Create an account at{" "}
-        <a href="https://github.com/signup" target="_blank" rel="noreferrer">
-          GitHub sign up
-        </a>
-        , then enter your username here so the portal can invite you to the managed repo.
-      </p>
-      {repositoryAccessNote ? <p>Repo access note: {repositoryAccessNote}</p> : null}
-      <form action={grantAccessAction}>
-        <label>
-          GitHub Username
-          <input
-            name="githubUsername"
-            type="text"
-            required
-            defaultValue={githubUsername ?? ""}
-          />
-        </label>
-        <button type="submit">
-          {repositoryAccessStatus === "INVITED"
-            ? "Resend Repo Access Invite"
-            : "Save Username and Grant Repo Access"}
-        </button>
-      </form>
-    </>
-  );
-}
-
 function renderPublishAction(requestId: string, publishStatus: string, repositoryStatus: string) {
   if (repositoryStatus === "FAILED") {
     const retryAction = retryRepositoryBootstrapAction.bind(null, requestId);
-
     return (
       <form action={retryAction}>
         <PendingSubmitButton
           idleLabel="Retry Repo Setup"
-          pendingLabel="Retrying Repo Setup..."
+          pendingLabel="Retrying Repo Setup…"
           statusText="Retrying managed repo setup. This can take a moment."
+          variant="primary"
         />
       </form>
     );
   }
 
-  if (repositoryStatus !== "READY") {
-    return null;
-  }
+  if (repositoryStatus !== "READY") return null;
 
   if (publishStatus === "FAILED") {
     const retryAction = retryPublishAction.bind(null, requestId);
-
     return (
       <form action={retryAction}>
-        <button type="submit">Retry Publish</button>
+        <PendingSubmitButton
+          idleLabel="Retry Publish"
+          pendingLabel="Retrying Publish…"
+          statusText="Retrying publish to Azure…"
+          variant="primary"
+        />
       </form>
     );
   }
 
   if (publishStatus === "NOT_STARTED" || publishStatus === "SUCCEEDED") {
     const publishAction = publishToAzureAction.bind(null, requestId);
-
     return (
       <form action={publishAction}>
-        <button type="submit">Publish to Azure</button>
+        <PendingSubmitButton
+          idleLabel="Publish to Azure"
+          pendingLabel="Publishing to Azure…"
+          statusText="Publishing to Azure. This can take a few minutes."
+          variant="primary-solid"
+        />
       </form>
     );
   }
 
-  return <p>Publish status: {publishStatus.toLowerCase().replaceAll("_", " ")}</p>;
+  return (
+    <p style={{ color: "var(--text-secondary)", fontSize: "0.9375rem" }}>
+      Publish is in progress — check back shortly.
+    </p>
+  );
 }
 
 export default async function DownloadPage({
@@ -218,10 +103,7 @@ export default async function DownloadPage({
   }
 
   const appRequest = await prisma.appRequest.findFirst({
-    where: {
-      id: requestId,
-      userId,
-    },
+    where: { id: requestId, userId },
     include: {
       artifact: true,
       publishAttempts: {
@@ -240,56 +122,175 @@ export default async function DownloadPage({
     select: { githubUsername: true },
   });
 
+  const displayPublishUrl = getDisplayPublishUrl(
+    appRequest.primaryPublishUrl,
+    appRequest.publishUrl,
+  );
+  const pub = publishBadge(appRequest.publishStatus);
+
   return (
     <main>
-      <LogoutButton />
-      <h1>Your App Is Ready</h1>
-      <p>
-        The portal generated the ZIP artifact and tracks the managed GitHub
-        repository for supported publishing.
-      </p>
-      {appRequest.repositoryStatus === "FAILED" ? (
-        <Link href={`/api/download/${requestId}`}>Download ZIP</Link>
-      ) : null}
-      {renderRepositoryStatus(
-        appRequest.repositoryStatus,
-        appRequest.repositoryUrl,
-        appRequest.appName,
-        requestId,
-      )}
-      {renderRepositoryAccessSection(
-        requestId,
-        appRequest.repositoryStatus,
-        appRequest.repositoryAccessStatus,
-        appRequest.repositoryAccessNote,
-        currentUser?.githubUsername ?? null,
-      )}
-      <ol>
-        <li>Open the managed repo locally in Codex on your machine.</li>
-        <li>Let Codex clone, customize, commit, and push your changes.</li>
-        <li>Return here when the tracked GitHub repo is ready to publish.</li>
-        <li>Use portal publishing instead of setting up Azure tooling locally.</li>
-      </ol>
-      <p>Publish status: {appRequest.publishStatus.toLowerCase().replaceAll("_", " ")}</p>
-      {renderPublishMetadata({
-        azureWebAppName: appRequest.azureWebAppName,
-        primaryPublishUrl: appRequest.primaryPublishUrl,
-        publishUrl: appRequest.publishUrl,
-        githubWorkflowRunUrl:
-          appRequest.publishAttempts[0]?.githubWorkflowRunUrl ?? null,
-      })}
-      {renderRepositoryNote(
-        appRequest.repositoryStatus,
-        appRequest.publishErrorSummary,
-      )}
-      {renderPublishAction(
-        requestId,
-        appRequest.publishStatus,
-        appRequest.repositoryStatus,
-      )}
-      <p>
+      <nav aria-label="Breadcrumb" className="breadcrumb">
+        <Link href="/">Home</Link>
+        <span className="breadcrumb__sep" aria-hidden="true">/</span>
+        <Link href="/apps">My Apps</Link>
+        <span className="breadcrumb__sep" aria-hidden="true">/</span>
+        <span aria-current="page">{appRequest.appName}</span>
+      </nav>
+
+      <div className="page-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+        <div>
+          <h1>Your App Is Ready</h1>
+          <p>{appRequest.appName} — Download the ZIP, set up Codex, and publish to Azure.</p>
+        </div>
+        {appRequest.repositoryStatus === "FAILED" ? (
+          <Link href={`/api/download/${requestId}`} className="btn btn--secondary-solid">
+            ⬇ Download ZIP
+          </Link>
+        ) : null}
+      </div>
+
+      <div style={{ display: "grid", gap: "1.25rem" }}>
+
+        {/* Repository section */}
+        <div className="card card--navy-border">
+          <p className="section-title">Managed Repository</p>
+          {appRequest.repositoryStatus === "READY" && appRequest.repositoryUrl ? (
+            <>
+              <div className="status-table" style={{ marginBottom: "1rem" }}>
+                <div className="status-row">
+                  <span>
+                    Managed repo ready:{" "}
+                    <a href={appRequest.repositoryUrl} target="_blank" rel="noreferrer" className="meta-link">
+                      {appRequest.repositoryUrl}
+                    </a>
+                  </span>
+                </div>
+              </div>
+              <CopyCodexHandoffButton
+                prompt={buildCodexHandoffPrompt(
+                  appRequest.repositoryUrl,
+                  appRequest.appName,
+                  requestId,
+                )}
+              />
+            </>
+          ) : appRequest.repositoryStatus === "FAILED" ? (
+            <div className="error-box">
+              Repo setup failed. The ZIP is still available. An operator may need to
+              fix the GitHub App or org configuration before portal publishing can continue.
+            </div>
+          ) : (
+            <div className="info-box">Managed repo setup in progress — check back shortly.</div>
+          )}
+
+          {appRequest.publishErrorSummary && appRequest.repositoryStatus === "FAILED" ? (
+            <div className="warning-box" style={{ marginTop: "0.75rem" }}>
+              Repo setup note: {appRequest.publishErrorSummary}
+            </div>
+          ) : null}
+        </div>
+
+        {/* GitHub access section */}
+        {appRequest.repositoryStatus === "READY" ? (
+          <div className="card card--gold-border">
+            <p className="section-title">GitHub Access for Codex</p>
+            {appRequest.repositoryAccessStatus === "GRANTED" ? (
+              <div className="success-box">
+                Repo access granted{currentUser?.githubUsername ? ` for @${currentUser.githubUsername}` : ""}.
+              </div>
+            ) : (
+              <>
+                <p style={{ fontSize: "0.9375rem", marginBottom: "0.875rem" }}>
+                  Need Codex access to this repo?{" "}
+                  <a href="https://github.com/signup" target="_blank" rel="noreferrer">
+                    Create a GitHub account
+                  </a>
+                  , then enter your username so the portal can invite you.
+                </p>
+                {appRequest.repositoryAccessNote ? (
+                  <div className="warning-box" style={{ marginBottom: "0.875rem" }}>
+                    {appRequest.repositoryAccessNote}
+                  </div>
+                ) : null}
+                <form
+                  action={saveGitHubUsernameAndGrantAccessAction.bind(null, requestId)}
+                  style={{ display: "flex", gap: "0.625rem", flexWrap: "wrap" }}
+                >
+                  <input
+                    name="githubUsername"
+                    type="text"
+                    required
+                    placeholder="GitHub username"
+                    defaultValue={currentUser?.githubUsername ?? ""}
+                    className="form-control"
+                    style={{ maxWidth: "240px" }}
+                  />
+                  <button type="submit" className="btn btn--secondary-solid">
+                    {appRequest.repositoryAccessStatus === "INVITED"
+                      ? "Resend Repo Access Invite"
+                      : "Grant Repo Access"}
+                  </button>
+                </form>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {/* Codex workflow steps */}
+        <div className="card">
+          <p className="section-title">Codex Workflow</p>
+          <ol className="step-list">
+            <li>Open the managed repo locally in Codex on your machine.</li>
+            <li>Let Codex clone, customize, commit, and push your changes.</li>
+            <li>Return here when the repo is ready to publish to Azure.</li>
+            <li>Use portal publishing instead of setting up Azure tooling locally.</li>
+          </ol>
+        </div>
+
+        {/* Publish section */}
+        <div className="card card--navy-border">
+          <p className="section-title">Azure Publishing</p>
+          <div className="status-table" style={{ marginBottom: "1rem" }}>
+            <div className="status-row">
+              <span className="status-row__label">Status</span>
+              <span className={`badge badge--${pub.variant}`}>{pub.label}</span>
+            </div>
+            {appRequest.azureWebAppName ? (
+              <div className="status-row">
+                Azure app: {appRequest.azureWebAppName}
+              </div>
+            ) : null}
+            {displayPublishUrl ? (
+              <div className="status-row">
+                <a href={displayPublishUrl} target="_blank" rel="noreferrer" className="meta-link">
+                  {displayPublishUrl}
+                </a>
+              </div>
+            ) : null}
+            {appRequest.publishAttempts[0]?.githubWorkflowRunUrl ? (
+              <div className="status-row">
+                <a href={appRequest.publishAttempts[0].githubWorkflowRunUrl} target="_blank" rel="noreferrer" className="meta-link">
+                  GitHub workflow
+                </a>
+              </div>
+            ) : null}
+          </div>
+
+          {appRequest.publishErrorSummary && appRequest.repositoryStatus !== "FAILED" ? (
+            <div className="warning-box" style={{ marginBottom: "0.875rem" }}>
+              Last publish note: {appRequest.publishErrorSummary}
+            </div>
+          ) : null}
+
+          {renderPublishAction(requestId, appRequest.publishStatus, appRequest.repositoryStatus)}
+        </div>
+
+      </div>
+
+      <div style={{ marginTop: "1.5rem", fontSize: "0.875rem", color: "var(--text-secondary)" }}>
         Need to revisit this later? Go to <Link href="/apps">My Apps</Link>.
-      </p>
+      </div>
     </main>
   );
 }

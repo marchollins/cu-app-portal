@@ -6,10 +6,12 @@ import { TemplateFormFields } from "./template-form-fields";
 
 export function TemplateForm({ template }: { template: PortalTemplate }) {
   return (
-    <form action={createAppAction}>
+    <form action={createAppAction} className="form-stack">
       <input type="hidden" name="templateSlug" value={template.slug} />
       <TemplateFormFields template={template} />
-      <SubmitButton />
+      <div>
+        <SubmitButton />
+      </div>
     </form>
   );
 }

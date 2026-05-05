@@ -7,23 +7,37 @@ export function PendingSubmitButton({
   idleLabel,
   pendingLabel,
   statusText,
+  variant = "primary-solid",
 }: {
   idleLabel: string;
   pendingLabel: string;
   statusText: string;
+  variant?: "primary-solid" | "secondary-solid" | "primary" | "secondary";
 }) {
   const { pending } = useFormStatus();
 
   return (
     <>
-      <button type="submit" disabled={pending}>
-        {pending ? pendingLabel : idleLabel}
+      <button
+        type="submit"
+        disabled={pending}
+        className={`btn btn--${variant}`}
+      >
+        {pending ? (
+          <>
+            <span style={{ display: "inline-block", width: "14px", height: "14px", border: "2px solid currentColor", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} aria-hidden="true" />
+            {pendingLabel}
+          </>
+        ) : (
+          idleLabel
+        )}
       </button>
       {pending ? (
-        <p aria-live="polite" role="status">
+        <p className="pending-status" aria-live="polite" role="status">
           {statusText}
         </p>
       ) : null}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </>
   );
 }

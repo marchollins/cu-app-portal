@@ -100,9 +100,6 @@ describe("MyAppsPage", () => {
     expect(
       screen.getByRole("heading", { name: /my apps/i }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /log out/i }),
-    ).toBeInTheDocument();
     expect(screen.getByText(/campus dashboard/i)).toBeInTheDocument();
     expect(screen.getByText(/repo: ready/i)).toBeInTheDocument();
     expect(screen.getByText(/repo access: granted/i)).toBeInTheDocument();
