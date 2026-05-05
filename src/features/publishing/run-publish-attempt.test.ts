@@ -25,7 +25,16 @@ vi.mock("./azure/config", () => ({
 }));
 
 describe("runPublishAttempt", () => {
+  const consoleInfo = vi
+    .spyOn(console, "info")
+    .mockImplementation(() => undefined);
+  const consoleError = vi
+    .spyOn(console, "error")
+    .mockImplementation(() => undefined);
+
   beforeEach(() => {
+    consoleInfo.mockClear();
+    consoleError.mockClear();
     vi.mocked(prisma.publishAttempt.findUnique).mockReset();
     vi.mocked(prisma.publishAttempt.update).mockReset();
     vi.mocked(prisma.appRequest.update).mockReset();
@@ -148,6 +157,100 @@ describe("runPublishAttempt", () => {
     });
   });
 
+  it("logs publish worker task lifecycle details", async () => {
+    vi.mocked(prisma.publishAttempt.findUnique).mockResolvedValue({
+      id: "attempt-123",
+      appRequestId: "request-123",
+      appRequest: {
+        id: "request-123",
+      },
+    } as Awaited<ReturnType<typeof prisma.publishAttempt.findUnique>>);
+
+    await runPublishAttempt("attempt-123", {
+      provisionInfrastructure: vi.fn().mockResolvedValue({
+        azureResourceGroup: "rg-cu-apps-published",
+        azureAppServicePlan: "asp-cu-apps-published",
+        azureWebAppName: "app-campus-dashboard-clx9abc1",
+        azurePostgresServer: "psql-cu-apps-published",
+        azureDatabaseName: "db_campus_dashboard_clx9abc1",
+        azureDefaultHostName: "app-campus-dashboard-clx9abc1.azurewebsites.net",
+        primaryPublishUrl:
+          "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+      }),
+      deployRepository: vi.fn().mockResolvedValue({
+        publishUrl: "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+        githubWorkflowRunId: "123456789",
+        githubWorkflowRunUrl:
+          "https://github.com/cedarville-it/campus-dashboard/actions/runs/123456789",
+      }),
+      verifyDeployment: vi.fn().mockResolvedValue({
+        verifiedAt: new Date("2026-04-30T12:00:00.000Z"),
+      }),
+    });
+
+    expect(consoleInfo).toHaveBeenCalledWith("[publish-worker]", "started", {
+      publishAttemptId: "attempt-123",
+      requestId: "request-123",
+    });
+    expect(consoleInfo).toHaveBeenCalledWith(
+      "[publish-worker]",
+      "provisioning started",
+      {
+        publishAttemptId: "attempt-123",
+        requestId: "request-123",
+      },
+    );
+    expect(consoleInfo).toHaveBeenCalledWith(
+      "[publish-worker]",
+      "provisioning completed",
+      expect.objectContaining({
+        publishAttemptId: "attempt-123",
+        requestId: "request-123",
+        azureWebAppName: "app-campus-dashboard-clx9abc1",
+      }),
+    );
+    expect(consoleInfo).toHaveBeenCalledWith(
+      "[publish-worker]",
+      "deployment started",
+      {
+        publishAttemptId: "attempt-123",
+        requestId: "request-123",
+      },
+    );
+    expect(consoleInfo).toHaveBeenCalledWith(
+      "[publish-worker]",
+      "deployment completed",
+      expect.objectContaining({
+        publishAttemptId: "attempt-123",
+        requestId: "request-123",
+        githubWorkflowRunId: "123456789",
+      }),
+    );
+    expect(consoleInfo).toHaveBeenCalledWith(
+      "[publish-worker]",
+      "verification started",
+      {
+        publishAttemptId: "attempt-123",
+        requestId: "request-123",
+        publishUrl: "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+      },
+    );
+    expect(consoleInfo).toHaveBeenCalledWith(
+      "[publish-worker]",
+      "verification completed",
+      {
+        publishAttemptId: "attempt-123",
+        requestId: "request-123",
+        verifiedAt: new Date("2026-04-30T12:00:00.000Z"),
+      },
+    );
+    expect(consoleInfo).toHaveBeenCalledWith("[publish-worker]", "succeeded", {
+      publishAttemptId: "attempt-123",
+      requestId: "request-123",
+      publishUrl: "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+    });
+  });
+
   it("marks the attempt and request failed when publishing throws", async () => {
     vi.mocked(prisma.publishAttempt.findUnique).mockResolvedValue({
       id: "attempt-456",
@@ -181,6 +284,12 @@ describe("runPublishAttempt", () => {
         publishStatus: "FAILED",
         publishErrorSummary: "azure permission denied",
       },
+    });
+    expect(consoleError).toHaveBeenCalledWith("[publish-worker]", "failed", {
+      publishAttemptId: "attempt-456",
+      requestId: "request-456",
+      errorSummary: "azure permission denied",
+      error: expect.any(Error),
     });
   });
 

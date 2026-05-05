@@ -84,6 +84,10 @@ function createDefaultRuntime() {
   });
 }
 
+function logPublishWorker(event: string, details: Record<string, unknown>) {
+  console.info("[publish-worker]", event, details);
+}
+
 export async function runPublishAttempt(
   attemptId: string,
   runtime?: PublishRuntime,
@@ -116,12 +120,30 @@ export async function runPublishAttempt(
     },
   });
 
+  logPublishWorker("started", {
+    publishAttemptId: attemptId,
+    requestId: attempt.appRequestId,
+  });
+
   try {
     const effectiveRuntime = runtime ?? createDefaultRuntime();
+
+    logPublishWorker("provisioning started", {
+      publishAttemptId: attemptId,
+      requestId: attempt.appRequestId,
+    });
 
     const publishTarget = await effectiveRuntime.provisionInfrastructure(
       attempt.appRequestId,
     );
+
+    logPublishWorker("provisioning completed", {
+      publishAttemptId: attemptId,
+      requestId: attempt.appRequestId,
+      azureResourceGroup: publishTarget.azureResourceGroup,
+      azureWebAppName: publishTarget.azureWebAppName,
+      primaryPublishUrl: publishTarget.primaryPublishUrl,
+    });
 
     await prisma.appRequest.update({
       where: { id: attempt.appRequestId },
@@ -142,9 +164,22 @@ export async function runPublishAttempt(
       },
     });
 
+    logPublishWorker("deployment started", {
+      publishAttemptId: attemptId,
+      requestId: attempt.appRequestId,
+    });
+
     const deployment = await effectiveRuntime.deployRepository(
       attempt.appRequestId,
     );
+
+    logPublishWorker("deployment completed", {
+      publishAttemptId: attemptId,
+      requestId: attempt.appRequestId,
+      publishUrl: deployment.publishUrl,
+      githubWorkflowRunId: deployment.githubWorkflowRunId,
+      githubWorkflowRunUrl: deployment.githubWorkflowRunUrl,
+    });
 
     await prisma.publishAttempt.update({
       where: { id: attemptId },
@@ -162,9 +197,21 @@ export async function runPublishAttempt(
       },
     });
 
+    logPublishWorker("verification started", {
+      publishAttemptId: attemptId,
+      requestId: attempt.appRequestId,
+      publishUrl: deployment.publishUrl,
+    });
+
     const verification = await effectiveRuntime.verifyDeployment(
       deployment.publishUrl,
     );
+
+    logPublishWorker("verification completed", {
+      publishAttemptId: attemptId,
+      requestId: attempt.appRequestId,
+      verifiedAt: verification.verifiedAt,
+    });
 
     const completedAt = new Date();
 
@@ -188,6 +235,12 @@ export async function runPublishAttempt(
       },
     });
 
+    logPublishWorker("succeeded", {
+      publishAttemptId: attemptId,
+      requestId: attempt.appRequestId,
+      publishUrl: deployment.publishUrl,
+    });
+
     await recordAuditEvent("PUBLISH_SUCCEEDED", {
       requestId: attempt.appRequestId,
       publishAttemptId: attemptId,
@@ -197,6 +250,13 @@ export async function runPublishAttempt(
     const errorSummary =
       error instanceof Error ? error.message : "Unknown publish error";
     const finishedAt = new Date();
+
+    console.error("[publish-worker]", "failed", {
+      publishAttemptId: attemptId,
+      requestId: attempt.appRequestId,
+      errorSummary,
+      error,
+    });
 
     await prisma.publishAttempt.update({
       where: { id: attemptId },

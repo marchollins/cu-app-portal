@@ -36,7 +36,16 @@ vi.mock("./run-publish-attempt", () => ({
 }));
 
 describe("publishing actions", () => {
+  const consoleInfo = vi
+    .spyOn(console, "info")
+    .mockImplementation(() => undefined);
+  const consoleError = vi
+    .spyOn(console, "error")
+    .mockImplementation(() => undefined);
+
   beforeEach(() => {
+    consoleInfo.mockClear();
+    consoleError.mockClear();
     vi.mocked(prisma.$transaction).mockReset();
     vi.mocked(resolveCurrentUserId).mockReset();
     vi.mocked(prisma.appRequest.findFirst).mockReset();
@@ -119,10 +128,35 @@ describe("publishing actions", () => {
     expect(runPublishAttempt).toHaveBeenCalledWith("attempt-123");
   });
 
+  it("logs publish worker queueing and background completion", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "request-123",
+      userId: "user-123",
+      repositoryStatus: "READY",
+      publishStatus: "NOT_STARTED",
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.publishAttempt.create).mockResolvedValue({
+      id: "attempt-123",
+    } as Awaited<ReturnType<typeof prisma.publishAttempt.create>>);
+    vi.mocked(runPublishAttempt).mockResolvedValue(undefined);
+
+    await publishToAzureAction("request-123");
+    await Promise.resolve();
+
+    expect(consoleInfo).toHaveBeenCalledWith("[publish-worker]", "queued", {
+      requestId: "request-123",
+      publishAttemptId: "attempt-123",
+    });
+    expect(consoleInfo).toHaveBeenCalledWith("[publish-worker]", "started", {
+      publishAttemptId: "attempt-123",
+    });
+    expect(consoleInfo).toHaveBeenCalledWith("[publish-worker]", "completed", {
+      publishAttemptId: "attempt-123",
+    });
+  });
+
   it("starts the publish worker even when requested audit logging fails", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
       id: "request-123",
@@ -143,14 +177,9 @@ describe("publishing actions", () => {
       "Failed to record publish requested audit event.",
       expect.any(Error),
     );
-
-    consoleError.mockRestore();
   });
 
   it("starts the publish worker without awaiting long-running deployment", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
       id: "request-123",
@@ -170,11 +199,13 @@ describe("publishing actions", () => {
 
     expect(runPublishAttempt).toHaveBeenCalledWith("attempt-123");
     expect(consoleError).toHaveBeenCalledWith(
-      "Publish worker failed after queueing.",
-      expect.any(Error),
+      "[publish-worker]",
+      "failed after queueing",
+      {
+        publishAttemptId: "attempt-123",
+        error: expect.any(Error),
+      },
     );
-
-    consoleError.mockRestore();
   });
 
   it("queues and starts a new publish attempt for a succeeded request", async () => {

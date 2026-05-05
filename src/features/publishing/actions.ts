@@ -50,10 +50,23 @@ function revalidatePublishViews(requestId: string) {
   }
 }
 
+function logPublishWorker(event: string, details: Record<string, unknown>) {
+  console.info("[publish-worker]", event, details);
+}
+
 function startPublishWorker(attemptId: string) {
-  void runPublishAttempt(attemptId).catch((error) => {
-    console.error("Publish worker failed after queueing.", error);
-  });
+  logPublishWorker("started", { publishAttemptId: attemptId });
+
+  void runPublishAttempt(attemptId)
+    .then(() => {
+      logPublishWorker("completed", { publishAttemptId: attemptId });
+    })
+    .catch((error) => {
+      console.error("[publish-worker]", "failed after queueing", {
+        publishAttemptId: attemptId,
+        error,
+      });
+    });
 }
 
 async function queuePublishAttempt(
@@ -96,6 +109,11 @@ async function queuePublishAttempt(
   });
 
   await recordPublishRequested({
+    requestId,
+    publishAttemptId: attemptId,
+  });
+
+  logPublishWorker("queued", {
     requestId,
     publishAttemptId: attemptId,
   });
