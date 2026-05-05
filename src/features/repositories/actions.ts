@@ -104,6 +104,7 @@ export async function retryRepositoryBootstrapAction(requestId: string) {
       appRequestId: requestId,
       input,
       files: archive.files,
+      reuseExistingRepository: true,
     });
 
     await prisma.appRequest.update({

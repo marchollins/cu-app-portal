@@ -11,6 +11,7 @@ type BootstrapManagedRepositoryInput = {
   appRequestId: string;
   input: CreateAppRequestInput;
   files: Record<string, string>;
+  reuseExistingRepository?: boolean;
   config?: GitHubAppConfig;
 };
 
@@ -36,6 +37,7 @@ function resolveInstallationId(config: GitHubAppConfig, owner: string) {
 export async function bootstrapManagedRepository({
   input,
   files,
+  reuseExistingRepository = false,
   config = loadGitHubAppConfig(),
 }: BootstrapManagedRepositoryInput): Promise<BootstrapManagedRepositoryResult> {
   const owner = config.defaultOrg;
@@ -63,6 +65,7 @@ export async function bootstrapManagedRepository({
     visibility: config.defaultRepoVisibility,
     files,
     defaultBranch: "main",
+    ...(reuseExistingRepository ? { reuseIfAlreadyExists: true } : {}),
   });
 
   return {

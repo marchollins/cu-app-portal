@@ -57,4 +57,48 @@ describe("bootstrapManagedRepository", () => {
     expect(result.owner).toBe("cedarville-it");
     expect(result.url).toContain("github.com/cedarville-it/campus-dashboard");
   });
+
+  it("allows retry callers to reuse a repository that GitHub already created", async () => {
+    const createRepository = vi.fn().mockResolvedValue({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      url: "https://github.com/cedarville-it/campus-dashboard",
+      defaultBranch: "main",
+    });
+    vi.mocked(createGitHubAppClient).mockReturnValue({
+      createRepository,
+    });
+
+    await bootstrapManagedRepository({
+      appRequestId: "request-123",
+      input: {
+        templateSlug: "web-app",
+        appName: "Campus Dashboard",
+        description: "Shows campus metrics.",
+        hostingTarget: "Azure App Service",
+      },
+      files: {
+        "README.md": "# Campus Dashboard\n",
+      },
+      reuseExistingRepository: true,
+      config: {
+        appId: "123",
+        privateKey: "key",
+        allowedOrgs: ["cedarville-it"],
+        defaultOrg: "cedarville-it",
+        defaultRepoVisibility: "private",
+        installationIdsByOrg: {
+          "cedarville-it": "111",
+        },
+      },
+    });
+
+    expect(createRepository).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        reuseIfAlreadyExists: true,
+      }),
+    );
+  });
 });

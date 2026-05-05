@@ -18,6 +18,7 @@ type CreateRepositoryInput = {
   visibility: GitHubRepoVisibility;
   files: Record<string, string>;
   defaultBranch: string;
+  reuseIfAlreadyExists?: boolean;
 };
 
 type AddRepositoryCollaboratorInput = {
@@ -188,6 +189,14 @@ function isRetriableGitHubConflict(error: unknown) {
   );
 }
 
+function isPossibleExistingRepositoryError(error: unknown) {
+  return (
+    error instanceof Error &&
+    "status" in error &&
+    error.status === 422
+  );
+}
+
 function defaultSleep(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
@@ -249,6 +258,7 @@ export function createGitHubAppClient({
       visibility,
       files,
       defaultBranch,
+      reuseIfAlreadyExists = false,
     }: CreateRepositoryInput) {
       const headers = await withInstallationHeaders();
       const createRepoResponse = await fetchImpl(
@@ -263,9 +273,34 @@ export function createGitHubAppClient({
           }),
         },
       );
-      const repository = await readJson<GitHubRepositoryResponse>(
-        createRepoResponse,
-      );
+      let repository: GitHubRepositoryResponse;
+
+      try {
+        repository = await readJson<GitHubRepositoryResponse>(
+          createRepoResponse,
+        );
+      } catch (error) {
+        if (
+          !reuseIfAlreadyExists ||
+          !isPossibleExistingRepositoryError(error)
+        ) {
+          throw error;
+        }
+
+        try {
+          repository = await readJson<GitHubRepositoryResponse>(
+            await fetchImpl(
+              `https://api.github.com/repos/${githubPathSegment(owner)}/${githubPathSegment(name)}`,
+              {
+                method: "GET",
+                headers,
+              },
+            ),
+          );
+        } catch {
+          throw error;
+        }
+      }
 
       let updatedRepository: GitHubRepositoryResponse | null = null;
 

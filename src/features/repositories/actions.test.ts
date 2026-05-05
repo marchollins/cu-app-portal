@@ -120,6 +120,7 @@ describe("retryRepositoryBootstrapAction", () => {
       files: {
         "README.md": "# Campus Dashboard\n",
       },
+      reuseExistingRepository: true,
     });
     expect(prisma.appRequest.update).toHaveBeenCalledWith({
       where: { id: "req_123" },
