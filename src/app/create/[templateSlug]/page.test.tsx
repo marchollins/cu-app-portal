@@ -16,6 +16,10 @@ vi.mock("@/app/create/actions", () => ({
   createAppAction: vi.fn(),
 }));
 
+vi.mock("@/features/auth/logout", () => ({
+  logoutAction: vi.fn(),
+}));
+
 vi.mock("@/features/templates/catalog", () => ({
   getActiveTemplateBySlug: mockGetActiveTemplateBySlug,
 }));
@@ -42,6 +46,9 @@ describe("TemplatePage", () => {
     );
     expect(
       screen.getByRole("heading", { name: /web app starter/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /log out/i }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/app name/i)).toBeInTheDocument();
   });

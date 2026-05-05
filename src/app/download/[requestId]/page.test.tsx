@@ -17,6 +17,10 @@ vi.mock("@/features/app-requests/current-user", () => ({
   getCurrentUserIdOrNull: vi.fn(),
 }));
 
+vi.mock("@/features/auth/logout", () => ({
+  logoutAction: vi.fn(),
+}));
+
 vi.mock("@/features/publishing/actions", () => ({
   publishToAzureAction: vi.fn(),
   retryPublishAction: vi.fn(),
@@ -83,6 +87,9 @@ describe("DownloadPage", () => {
       screen.getByRole("heading", { name: /your app is ready/i }),
     ).toBeInTheDocument();
     expect(
+      screen.getByRole("button", { name: /log out/i }),
+    ).toBeInTheDocument();
+    expect(
       screen.getByText(/managed repo ready/i),
     ).toBeInTheDocument();
     expect(
@@ -96,10 +103,7 @@ describe("DownloadPage", () => {
     expect(
       screen.queryByText(/create a new github repository/i),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /download zip/i })).toHaveAttribute(
-      "href",
-      "/api/download/req_123",
-    );
+    expect(screen.queryByRole("link", { name: /download zip/i })).not.toBeInTheDocument();
     expect(screen.getByText(/repo access granted/i)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /publish to azure/i }),
@@ -188,6 +192,10 @@ describe("DownloadPage", () => {
     );
 
     expect(screen.getByText(/repo setup failed/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /download zip/i })).toHaveAttribute(
+      "href",
+      "/api/download/req_456",
+    );
     expect(screen.getByText(/repo setup note:/i)).toBeInTheDocument();
     expect(screen.queryByText(/last publish note:/i)).not.toBeInTheDocument();
     expect(
