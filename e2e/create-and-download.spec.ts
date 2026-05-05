@@ -11,11 +11,13 @@ test("authenticated user can create an app package", async ({ page }) => {
   await page
     .getByLabel("Short Description")
     .fill("Shows campus metrics.");
-  await page.getByLabel("Hosting Target").selectOption("Vercel");
+  await expect(
+    page.getByRole("combobox", { name: /hosting target/i }),
+  ).toHaveCount(0);
   await page.getByRole("button", { name: /generate app package/i }).click();
 
   await expect(
-    page.getByRole("heading", { name: /your app package is ready/i }),
+    page.getByRole("heading", { name: /your app is ready/i }),
   ).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("link", { name: /download zip/i }).click();

@@ -21,6 +21,17 @@ export function TemplateFormFields({ template }: { template: PortalTemplate }) {
               </label>
             );
           case "select":
+            if (field.options.length === 1) {
+              return (
+                <input
+                  key={field.name}
+                  name={field.name}
+                  type="hidden"
+                  value={field.options[0]}
+                />
+              );
+            }
+
             return (
               <label key={field.name}>
                 {field.label}

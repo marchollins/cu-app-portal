@@ -10,6 +10,7 @@ import {
   retryRepositoryBootstrapAction,
   saveGitHubUsernameAndGrantAccessAction,
 } from "@/features/repositories/actions";
+import { PendingSubmitButton } from "@/features/forms/pending-submit-button";
 import { buildCodexHandoffPrompt } from "@/features/repositories/codex-handoff";
 import { CopyCodexHandoffButton } from "@/features/repositories/copy-codex-handoff-button";
 import { prisma } from "@/lib/db";
@@ -30,7 +31,10 @@ function renderRepositoryStatus(
     return (
       <>
         <p>
-          Managed repo ready: <a href={repositoryUrl}>{repositoryUrl}</a>
+          Managed repo ready:{" "}
+          <a href={repositoryUrl} target="_blank" rel="noreferrer">
+            {repositoryUrl}
+          </a>
         </p>
         <p>
           <CopyCodexHandoffButton prompt={codexPrompt} />
@@ -164,7 +168,11 @@ function renderPublishAction(requestId: string, publishStatus: string, repositor
 
     return (
       <form action={retryAction}>
-        <button type="submit">Retry Repo Setup</button>
+        <PendingSubmitButton
+          idleLabel="Retry Repo Setup"
+          pendingLabel="Retrying Repo Setup..."
+          statusText="Retrying managed repo setup. This can take a moment."
+        />
       </form>
     );
   }

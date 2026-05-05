@@ -117,6 +117,13 @@ export default async function MyAppsPage() {
 
   return (
     <main>
+      <nav aria-label="Breadcrumb" className="breadcrumb">
+        <Link href="/">Home</Link>
+        <span aria-hidden="true">/</span>
+        <Link href="/create">Create New App</Link>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">My Apps</span>
+      </nav>
       <h1>My Apps</h1>
       <p>Revisit your generated apps, managed repos, and portal publish status.</p>
       {appRequests.length === 0 ? (

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import MyAppsPage from "./page";
 
@@ -35,6 +35,33 @@ afterEach(() => {
 });
 
 describe("MyAppsPage", () => {
+  it("renders breadcrumb links for returning home or creating another app", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue(
+      [] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>,
+    );
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: null,
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(await MyAppsPage());
+
+    const breadcrumb = screen.getByRole("navigation", {
+      name: /breadcrumb/i,
+    });
+    expect(within(breadcrumb).getByRole("link", { name: /home/i })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(
+      within(breadcrumb).getByRole("link", { name: /create new app/i }),
+    ).toHaveAttribute("href", "/create");
+    expect(within(breadcrumb).getByText("My Apps")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
   it("lists only the current user's app repo and publish states", async () => {
     vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findMany).mockResolvedValue([

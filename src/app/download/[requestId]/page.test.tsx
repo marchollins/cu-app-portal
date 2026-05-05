@@ -1,6 +1,17 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DownloadPage from "./page";
+
+const mockUseFormStatus = vi.hoisted(() => vi.fn());
+
+vi.mock("react-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-dom")>();
+
+  return {
+    ...actual,
+    useFormStatus: mockUseFormStatus,
+  };
+});
 
 vi.mock("@/features/app-requests/current-user", () => ({
   getCurrentUserIdOrNull: vi.fn(),
@@ -29,6 +40,10 @@ vi.mock("@/lib/db", () => ({
 
 import { getCurrentUserIdOrNull } from "@/features/app-requests/current-user";
 import { prisma } from "@/lib/db";
+
+beforeEach(() => {
+  mockUseFormStatus.mockReturnValue({ pending: false });
+});
 
 afterEach(() => {
   cleanup();
@@ -70,6 +85,11 @@ describe("DownloadPage", () => {
     expect(
       screen.getByText(/managed repo ready/i),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", {
+        name: "https://github.com/cedarville-it/campus-dashboard",
+      }),
+    ).toHaveAttribute("target", "_blank");
     expect(
       screen.getByRole("button", { name: /copy codex handoff prompt/i }),
     ).toBeInTheDocument();
@@ -138,6 +158,7 @@ describe("DownloadPage", () => {
   });
 
   it("shows the stored repo bootstrap error as a repo setup note", async () => {
+    mockUseFormStatus.mockReturnValue({ pending: true });
     vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
       id: "req_456",
@@ -170,8 +191,11 @@ describe("DownloadPage", () => {
     expect(screen.getByText(/repo setup note:/i)).toBeInTheDocument();
     expect(screen.queryByText(/last publish note:/i)).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /retry repo setup/i }),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: /retrying repo setup/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("status"),
+    ).toHaveTextContent(/retrying managed repo setup/i);
     expect(
       screen.queryByRole("button", { name: /copy codex handoff prompt/i }),
     ).not.toBeInTheDocument();

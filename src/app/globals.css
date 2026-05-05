@@ -20,3 +20,13 @@ main {
 a {
   color: #0f766e;
 }
+
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  color: #475569;
+  font-size: 0.875rem;
+}

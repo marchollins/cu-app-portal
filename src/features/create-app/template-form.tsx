@@ -1,6 +1,7 @@
 import React from "react";
 import { createAppAction } from "@/app/create/actions";
 import type { PortalTemplate } from "@/features/templates/types";
+import { SubmitButton } from "./submit-button";
 import { TemplateFormFields } from "./template-form-fields";
 
 export function TemplateForm({ template }: { template: PortalTemplate }) {
@@ -8,7 +9,7 @@ export function TemplateForm({ template }: { template: PortalTemplate }) {
     <form action={createAppAction}>
       <input type="hidden" name="templateSlug" value={template.slug} />
       <TemplateFormFields template={template} />
-      <button type="submit">Generate App Package</button>
+      <SubmitButton />
     </form>
   );
 }
