@@ -24,6 +24,16 @@ async function readJson<T>(response: Response): Promise<T> {
   return body as T;
 }
 
+async function requireAzureStatus(response: Response, expectedStatuses: number[]) {
+  if (expectedStatuses.includes(response.status)) {
+    return;
+  }
+
+  const text = await response.text();
+
+  throw new Error(`Azure ARM request failed: ${response.status} ${text}`);
+}
+
 export function createAzureArmClient({
   subscriptionId,
   tokenProvider,
@@ -100,6 +110,24 @@ export function createAzureArmClient({
         ),
       );
     },
+    async deleteWebApp(input: {
+      resourceGroup: string;
+      name: string;
+    }) {
+      await requireAzureStatus(
+        await fetchImpl(
+          resourceUrl(
+            `/resourceGroups/${input.resourceGroup}/providers/Microsoft.Web/sites/${input.name}`,
+            "2023-12-01",
+          ),
+          {
+            method: "DELETE",
+            headers: await headers(),
+          },
+        ),
+        [200, 202, 204, 404],
+      );
+    },
     async putPostgresDatabase(input: {
       resourceGroup: string;
       serverName: string;
@@ -122,6 +150,25 @@ export function createAzureArmClient({
             }),
           },
         ),
+      );
+    },
+    async deletePostgresDatabase(input: {
+      resourceGroup: string;
+      serverName: string;
+      databaseName: string;
+    }) {
+      await requireAzureStatus(
+        await fetchImpl(
+          resourceUrl(
+            `/resourceGroups/${input.resourceGroup}/providers/Microsoft.DBforPostgreSQL/flexibleServers/${input.serverName}/databases/${input.databaseName}`,
+            "2023-06-01-preview",
+          ),
+          {
+            method: "DELETE",
+            headers: await headers(),
+          },
+        ),
+        [200, 202, 204, 404],
       );
     },
   };

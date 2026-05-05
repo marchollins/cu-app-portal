@@ -126,6 +126,42 @@ describe("createAzureArmClient", () => {
     );
   });
 
+  it("deletes the app web app and only the selected PostgreSQL database", async () => {
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValue(new Response(null, { status: 202 }));
+    const client = createAzureArmClient({
+      subscriptionId: "sub",
+      tokenProvider: async () => "token",
+      fetchImpl,
+    });
+
+    await client.deleteWebApp({
+      resourceGroup: "rg-cu-apps-published",
+      name: "app-campus-dashboard-clx9abc1",
+    });
+    await client.deletePostgresDatabase({
+      resourceGroup: "rg-cu-apps-published",
+      serverName: "psql-cu-apps-published",
+      databaseName: "db_campus_dashboard_clx9abc1",
+    });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://management.azure.com/subscriptions/sub/resourceGroups/rg-cu-apps-published/providers/Microsoft.Web/sites/app-campus-dashboard-clx9abc1?api-version=2023-12-01",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://management.azure.com/subscriptions/sub/resourceGroups/rg-cu-apps-published/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-cu-apps-published/databases/db_campus_dashboard_clx9abc1?api-version=2023-06-01-preview",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchImpl).not.toHaveBeenCalledWith(
+      "https://management.azure.com/subscriptions/sub/resourceGroups/rg-cu-apps-published/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-cu-apps-published?api-version=2023-06-01-preview",
+      expect.anything(),
+    );
+  });
+
   it("throws the ARM response status and text for non-JSON error bodies", async () => {
     const fetchImpl = vi
       .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()

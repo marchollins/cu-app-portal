@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { deleteAppAction } from "@/features/app-deletion/actions";
 import { getCurrentUserIdOrNull } from "@/features/app-requests/current-user";
 import {
   publishToAzureAction,
@@ -15,6 +16,10 @@ import { CopyCodexHandoffButton } from "@/features/repositories/copy-codex-hando
 import { prisma } from "@/lib/db";
 
 function renderAction(requestId: string, repositoryStatus: string, publishStatus: string) {
+  if (repositoryStatus === "DELETED") {
+    return <span>The managed repo has been deleted.</span>;
+  }
+
   if (repositoryStatus === "FAILED") {
     const retryAction = retryRepositoryBootstrapAction.bind(null, requestId);
 
@@ -39,6 +44,10 @@ function renderAction(requestId: string, repositoryStatus: string, publishStatus
     );
   }
 
+  if (publishStatus === "DELETED") {
+    return <span>The Azure deployment has been deleted.</span>;
+  }
+
   if (publishStatus === "NOT_STARTED" || publishStatus === "SUCCEEDED") {
     const publishAction = publishToAzureAction.bind(null, requestId);
 
@@ -50,6 +59,10 @@ function renderAction(requestId: string, repositoryStatus: string, publishStatus
   }
 
   return <span>Publish is already in progress.</span>;
+}
+
+function formatStatus(status: string) {
+  return status.toLowerCase().replaceAll("_", " ");
 }
 
 function getDisplayPublishUrl(
@@ -90,6 +103,75 @@ function renderPublishMetadata({
         </p>
       ) : null}
     </>
+  );
+}
+
+function renderDeletePanel(request: {
+  id: string;
+  repositoryOwner: string | null;
+  repositoryName: string | null;
+  repositoryStatus: string;
+  publishStatus: string;
+  azureWebAppName: string | null;
+  azureDatabaseName: string | null;
+}) {
+  const deleteAction = deleteAppAction.bind(null, request.id);
+  const canDeleteGitHub =
+    request.repositoryStatus !== "DELETED" &&
+    Boolean(request.repositoryOwner && request.repositoryName);
+  const canDeleteAzure =
+    request.publishStatus !== "DELETED" &&
+    Boolean(request.azureWebAppName || request.azureDatabaseName);
+
+  return (
+    <details className="delete-panel">
+      <summary>Delete App</summary>
+      <form action={deleteAction}>
+        <p className="delete-warning">
+          Anything you leave unchecked must be deleted manually later.
+        </p>
+        <fieldset>
+          <legend>Resources to delete</legend>
+          <label>
+            <input name="deletePortal" type="checkbox" />
+            Delete portal record and generated ZIP
+          </label>
+          {canDeleteGitHub ? (
+            <label>
+              <input name="deleteGithub" type="checkbox" />
+              Delete GitHub repository{" "}
+              {`${request.repositoryOwner}/${request.repositoryName}`}
+            </label>
+          ) : (
+            <p>GitHub repository is already deleted or not tracked.</p>
+          )}
+          {canDeleteAzure ? (
+            <label>
+              <input name="deleteAzure" type="checkbox" />
+              <span>
+                Delete Azure deployment
+                {request.azureWebAppName ? (
+                  <>: Web App {request.azureWebAppName}</>
+                ) : null}
+                {request.azureDatabaseName ? (
+                  <>
+                    {" "}
+                    and PostgreSQL database {request.azureDatabaseName}
+                  </>
+                ) : null}
+              </span>
+            </label>
+          ) : (
+            <p>Azure deployment is already deleted or not tracked.</p>
+          )}
+        </fieldset>
+        <label>
+          <input name="confirmDelete" type="checkbox" required />
+          I understand selected resources will be deleted.
+        </label>
+        <button type="submit">Delete Selected Resources</button>
+      </form>
+    </details>
   );
 }
 
@@ -134,11 +216,11 @@ export default async function MyAppsPage() {
             <li key={request.id}>
               <h2>{request.appName}</h2>
               <p>Generation: {request.generationStatus.toLowerCase()}</p>
-              <p>Repo: {request.repositoryStatus.toLowerCase()}</p>
+              <p>Repo: {formatStatus(request.repositoryStatus)}</p>
               <p>
-                Repo access: {request.repositoryAccessStatus.toLowerCase().replaceAll("_", " ")}
+                Repo access: {formatStatus(request.repositoryAccessStatus)}
               </p>
-              <p>Publish: {request.publishStatus.toLowerCase().replaceAll("_", " ")}</p>
+              <p>Publish: {formatStatus(request.publishStatus)}</p>
               {request.repositoryUrl ? (
                 <>
                   <p>
@@ -210,6 +292,15 @@ export default async function MyAppsPage() {
                 request.repositoryStatus,
                 request.publishStatus,
               )}
+              {renderDeletePanel({
+                id: request.id,
+                repositoryOwner: request.repositoryOwner,
+                repositoryName: request.repositoryName,
+                repositoryStatus: request.repositoryStatus,
+                publishStatus: request.publishStatus,
+                azureWebAppName: request.azureWebAppName,
+                azureDatabaseName: request.azureDatabaseName,
+              })}
             </li>
           ))}
         </ul>

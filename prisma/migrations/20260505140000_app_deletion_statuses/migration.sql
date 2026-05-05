@@ -1,0 +1,2 @@
+ALTER TYPE "RepositoryStatus" ADD VALUE 'DELETED';
+ALTER TYPE "PublishStatus" ADD VALUE 'DELETED';

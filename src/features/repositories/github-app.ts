@@ -28,6 +28,11 @@ type AddRepositoryCollaboratorInput = {
   permission: "pull" | "triage" | "push" | "maintain" | "admin";
 };
 
+type DeleteRepositoryInput = {
+  owner: string;
+  name: string;
+};
+
 type SetActionsSecretInput = {
   owner: string;
   name: string;
@@ -440,6 +445,18 @@ export function createGitHubAppClient({
         status: "INVITED" as const,
         invitationId: invitation?.id ?? null,
       };
+    },
+    async deleteRepository({ owner, name }: DeleteRepositoryInput) {
+      const headers = await withInstallationHeaders();
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${githubPathSegment(owner)}/${githubPathSegment(name)}`,
+        {
+          method: "DELETE",
+          headers,
+        },
+      );
+
+      await requireGitHubStatus(response, [204, 404]);
     },
     async setActionsSecret({
       owner,

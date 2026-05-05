@@ -11,6 +11,10 @@ vi.mock("@/features/publishing/actions", () => ({
   retryPublishAction: vi.fn(),
 }));
 
+vi.mock("@/features/app-deletion/actions", () => ({
+  deleteAppAction: vi.fn(),
+}));
+
 vi.mock("@/features/repositories/actions", () => ({
   retryRepositoryBootstrapAction: vi.fn(),
   saveGitHubUsernameAndGrantAccessAction: vi.fn(),
@@ -74,9 +78,12 @@ describe("MyAppsPage", () => {
         repositoryAccessNote: "GitHub access is ready for @portalstaff.",
         publishStatus: "FAILED",
         repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
         publishUrl: null,
         primaryPublishUrl: null,
         azureWebAppName: null,
+        azureDatabaseName: null,
         publishAttempts: [],
       },
     ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
@@ -113,10 +120,13 @@ describe("MyAppsPage", () => {
         repositoryAccessNote: "GitHub access is ready for @portalstaff.",
         publishStatus: "DEPLOYING",
         repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
         publishUrl: "https://custom.example.edu",
         primaryPublishUrl:
           "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
         azureWebAppName: "app-campus-dashboard-clx9abc1",
+        azureDatabaseName: "db_campus_dashboard_clx9abc1",
         publishAttempts: [
           {
             githubWorkflowRunUrl:
@@ -159,9 +169,12 @@ describe("MyAppsPage", () => {
         repositoryAccessNote: null,
         publishStatus: "NOT_STARTED",
         repositoryUrl: null,
+        repositoryOwner: null,
+        repositoryName: null,
         publishUrl: null,
         primaryPublishUrl: null,
         azureWebAppName: null,
+        azureDatabaseName: null,
         publishAttempts: [],
       },
     ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
@@ -180,5 +193,59 @@ describe("MyAppsPage", () => {
     expect(
       screen.queryByRole("button", { name: /copy codex handoff prompt/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("presents scoped delete options with a manual cleanup warning", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
+      {
+        id: "req_delete",
+        appName: "Campus Dashboard",
+        generationStatus: "SUCCEEDED",
+        repositoryStatus: "READY",
+        repositoryAccessStatus: "GRANTED",
+        repositoryAccessNote: null,
+        publishStatus: "SUCCEEDED",
+        repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
+        publishUrl: "https://app-campus-dashboard.azurewebsites.net",
+        primaryPublishUrl: "https://app-campus-dashboard.azurewebsites.net",
+        azureWebAppName: "app-campus-dashboard-clx9abc1",
+        azureDatabaseName: "db_campus_dashboard_clx9abc1",
+        publishAttempts: [],
+      },
+    ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(await MyAppsPage());
+
+    expect(screen.getByText(/delete app/i)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/delete portal record and generated zip/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/delete github repository cedarville-it\/campus-dashboard/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/delete azure deployment/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/web app app-campus-dashboard-clx9abc1/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/postgresql database db_campus_dashboard_clx9abc1/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/anything you leave unchecked must be deleted manually later/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/i understand selected resources will be deleted/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /delete selected resources/i }),
+    ).toBeInTheDocument();
   });
 });

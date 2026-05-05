@@ -126,6 +126,7 @@ enum RepositoryStatus {
   PENDING
   READY
   FAILED
+  DELETED
 }
 
 enum RepositoryAccessStatus {
@@ -142,6 +143,7 @@ enum PublishStatus {
   DEPLOYING
   SUCCEEDED
   FAILED
+  DELETED
 }
 
 enum PublishAttemptStatus {

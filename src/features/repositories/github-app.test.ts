@@ -205,6 +205,45 @@ describe("createGitHubAppClient", () => {
     );
   });
 
+  it("deletes a repository and treats a missing repository as already deleted", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    const client = createGitHubAppClient({
+      appId: "12345",
+      privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      installationId: "111",
+      fetchImpl,
+    });
+
+    await client.deleteRepository({
+      owner: "cedarville it",
+      name: "campus/dashboard",
+    });
+    await expect(
+      client.deleteRepository({
+        owner: "cedarville it",
+        name: "campus/dashboard",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://api.github.com/repos/cedarville%20it/campus%2Fdashboard",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      4,
+      "https://api.github.com/repos/cedarville%20it/campus%2Fdashboard",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
   it("encodes workflow path segments", async () => {
     const { privateKey } = generateKeyPairSync("rsa", {
       modulusLength: 2048,

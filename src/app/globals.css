@@ -30,3 +30,40 @@ a {
   color: #475569;
   font-size: 0.875rem;
 }
+
+.delete-panel {
+  margin-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 1rem;
+}
+
+.delete-panel summary {
+  cursor: pointer;
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.delete-panel form {
+  display: grid;
+  gap: 0.875rem;
+  margin-top: 0.875rem;
+}
+
+.delete-panel fieldset {
+  display: grid;
+  gap: 0.625rem;
+  border: 1px solid #fecaca;
+  border-radius: 0.5rem;
+  padding: 0.875rem;
+}
+
+.delete-panel label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.delete-warning {
+  color: #7f1d1d;
+  font-weight: 700;
+}

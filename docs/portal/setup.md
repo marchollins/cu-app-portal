@@ -34,6 +34,7 @@ Notes for GitHub App setup:
 - Use `GITHUB_APP_INSTALLATION_ID` when all generated repos target one org.
 - Use `GITHUB_APP_INSTALLATIONS_JSON` when different Cedarville orgs need different installation ids, for example `{"cedarville-it":"111","cedarville-apps":"222"}`.
 - `GITHUB_DEFAULT_ORG` must match one of the orgs allowed by `GITHUB_ALLOWED_ORGS`.
+- The GitHub App needs enough repository administration permission to delete portal-managed repositories when a user selects GitHub deletion from `My Apps`.
 
 ### Portal-Managed Azure Publishing
 
@@ -62,6 +63,13 @@ Current v1 design decisions:
 - Generated user apps share one PostgreSQL flexible server: `psql-cu-apps-published`.
 - Each published app gets its own Azure Web App and its own PostgreSQL database on the shared server.
 - `AZURE_PUBLISH_RUNTIME_STACK` is fixed to `NODE|24-lts` for the current `web-app` template runtime.
+
+Deletion behavior:
+
+- `My Apps` deletion is scoped. Users can delete the portal record and artifact, the managed GitHub repository, and the Azure deployment independently.
+- Azure deletion removes the selected app's Azure Web App and the selected app's PostgreSQL database on the shared server.
+- Azure deletion never deletes the shared PostgreSQL flexible server.
+- If a user leaves GitHub or Azure unchecked while deleting the portal record, those resources must be deleted manually later because the portal record will no longer appear in `My Apps`.
 
 ## Local Development Flow
 
