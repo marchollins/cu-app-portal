@@ -11,3 +11,4 @@ tsconfig.next.tsbuildinfo
 .artifacts
 test-results
 .worktrees
+.claude/worktrees
