@@ -386,4 +386,117 @@ describe("createGitHubAppClient", () => {
     expect(sleepImpl).toHaveBeenCalledWith(250);
     expect(fetchImpl).toHaveBeenCalledTimes(9);
   });
+
+  it("reads repository metadata and ignores missing optional text files", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          html_url: "https://github.com/cedarville-it/campus-dashboard",
+          default_branch: "main",
+          name: "campus-dashboard",
+          owner: { login: "cedarville-it" },
+          private: true,
+        }),
+      )
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(createJsonResponse({ content: Buffer.from("{}").toString("base64") }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }));
+
+    const client = createGitHubAppClient({
+      appId: "12345",
+      privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      installationId: "111",
+      fetchImpl,
+    });
+
+    await expect(
+      client.getRepository({ owner: "cedarville-it", name: "campus-dashboard" }),
+    ).resolves.toMatchObject({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      defaultBranch: "main",
+    });
+    await expect(
+      client.readRepositoryTextFiles({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        ref: "main",
+        paths: ["package.json", "package-lock.json"],
+      }),
+    ).resolves.toEqual({
+      "package.json": "{}",
+    });
+  });
+
+  it("commits files directly and opens pull requests", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValue(createJsonResponse({ token: "installation-token" }));
+
+    fetchImpl
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(createJsonResponse({ object: { sha: "base-sha" } }))
+      .mockResolvedValueOnce(createJsonResponse({ tree: { sha: "base-tree-sha" } }))
+      .mockResolvedValueOnce(createJsonResponse({ sha: "blob-1" }))
+      .mockResolvedValueOnce(createJsonResponse({ sha: "tree-sha" }))
+      .mockResolvedValueOnce(createJsonResponse({ sha: "commit-sha" }))
+      .mockResolvedValueOnce(createJsonResponse({ ref: "refs/heads/main" }))
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(createJsonResponse({ object: { sha: "base-sha" } }))
+      .mockResolvedValueOnce(createJsonResponse({ ref: "refs/heads/portal/add-azure-publishing" }))
+      .mockResolvedValueOnce(createJsonResponse({ tree: { sha: "base-tree-sha" } }))
+      .mockResolvedValueOnce(createJsonResponse({ sha: "blob-2" }))
+      .mockResolvedValueOnce(createJsonResponse({ sha: "tree-sha-2" }))
+      .mockResolvedValueOnce(createJsonResponse({ sha: "commit-sha-2" }))
+      .mockResolvedValueOnce(createJsonResponse({ ref: "refs/heads/portal/add-azure-publishing" }))
+      .mockResolvedValueOnce(createJsonResponse({ html_url: "https://github.com/cedarville-it/campus-dashboard/pull/1" }));
+
+    const client = createGitHubAppClient({
+      appId: "12345",
+      privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      installationId: "111",
+      fetchImpl,
+    });
+
+    await expect(
+      client.commitFiles({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        branch: "main",
+        message: "Add Azure publishing",
+        files: { "docs/publishing/azure-app-service.md": "# Publish\n" },
+      }),
+    ).resolves.toEqual({ commitSha: "commit-sha" });
+    const directTreeBody = JSON.parse(String(fetchImpl.mock.calls[4][1]?.body));
+    expect(directTreeBody).toMatchObject({
+      base_tree: "base-tree-sha",
+    });
+
+    await expect(
+      client.createPullRequestWithFiles({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        baseBranch: "main",
+        branch: "portal/add-azure-publishing",
+        title: "Add Azure publishing",
+        body: "Prepared by the portal.",
+        message: "Add Azure publishing",
+        files: { "docs/publishing/azure-app-service.md": "# Publish\n" },
+      }),
+    ).resolves.toEqual({
+      commitSha: "commit-sha-2",
+      pullRequestUrl: "https://github.com/cedarville-it/campus-dashboard/pull/1",
+    });
+    const pullRequestTreeBody = JSON.parse(String(fetchImpl.mock.calls[12][1]?.body));
+    expect(pullRequestTreeBody).toMatchObject({
+      base_tree: "base-tree-sha",
+    });
+    expect(fetchImpl.mock.calls[14][0]).toBe(
+      "https://api.github.com/repos/cedarville-it/campus-dashboard/git/refs/heads/portal/add-azure-publishing",
+    );
+  });
 });
