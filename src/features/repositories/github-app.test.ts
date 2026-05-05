@@ -431,6 +431,90 @@ describe("createGitHubAppClient", () => {
     });
   });
 
+  it("reads the current branch head sha", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(createJsonResponse({ object: { sha: "head-sha" } }));
+
+    const client = createGitHubAppClient({
+      appId: "12345",
+      privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      installationId: "111",
+      fetchImpl,
+    });
+
+    await expect(
+      client.getBranchHead({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        branch: "main",
+      }),
+    ).resolves.toEqual({ sha: "head-sha" });
+  });
+
+  it("rejects direct commits when the expected head is stale", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(createJsonResponse({ object: { sha: "new-head-sha" } }));
+
+    const client = createGitHubAppClient({
+      appId: "12345",
+      privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      installationId: "111",
+      fetchImpl,
+    });
+
+    await expect(
+      client.commitFiles({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        branch: "main",
+        message: "Add Azure publishing",
+        expectedHeadSha: "old-head-sha",
+        files: { "docs/publishing/azure-app-service.md": "# Publish\n" },
+      }),
+    ).rejects.toThrow(
+      "Repository changed while preparing Azure publishing additions. Please retry.",
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects pull request preparation when the expected base head is stale", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(createJsonResponse({ object: { sha: "new-head-sha" } }));
+
+    const client = createGitHubAppClient({
+      appId: "12345",
+      privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      installationId: "111",
+      fetchImpl,
+    });
+
+    await expect(
+      client.createPullRequestWithFiles({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        baseBranch: "main",
+        branch: "portal/add-azure-publishing-campus-dashboard",
+        title: "Add Azure publishing",
+        body: "Prepared by the portal.",
+        message: "Add Azure publishing",
+        expectedHeadSha: "old-head-sha",
+        files: { "docs/publishing/azure-app-service.md": "# Publish\n" },
+      }),
+    ).rejects.toThrow(
+      "Repository changed while preparing Azure publishing additions. Please retry.",
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it("commits files directly and opens pull requests", async () => {
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const fetchImpl = vi

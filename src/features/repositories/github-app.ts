@@ -72,11 +72,18 @@ type ReadRepositoryTextFilesInput = {
   paths: string[];
 };
 
+type GetBranchHeadInput = {
+  owner: string;
+  name: string;
+  branch: string;
+};
+
 type CommitFilesInput = {
   owner: string;
   name: string;
   branch: string;
   message: string;
+  expectedHeadSha?: string;
   files: Record<string, string>;
 };
 
@@ -88,6 +95,7 @@ type CreatePullRequestWithFilesInput = {
   title: string;
   body: string;
   message: string;
+  expectedHeadSha?: string;
   files: Record<string, string>;
 };
 
@@ -156,6 +164,8 @@ type GitHubApiError = Error & {
 };
 
 const GIT_REPO_INIT_RETRY_DELAYS_MS = [250, 500, 1000];
+const STALE_REPOSITORY_HEAD_ERROR =
+  "Repository changed while preparing Azure publishing additions. Please retry.";
 
 function base64UrlJson(value: unknown) {
   return Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -278,6 +288,7 @@ async function createCommitFromFiles({
   name,
   branch,
   message,
+  expectedHeadSha,
   files,
   parentSha: initialParentSha,
 }: CommitFilesInput & {
@@ -297,6 +308,11 @@ async function createCommitFromFiles({
         ),
       )
     ).object.sha;
+
+  if (!initialParentSha && expectedHeadSha && parentSha !== expectedHeadSha) {
+    throw new Error(STALE_REPOSITORY_HEAD_ERROR);
+  }
+
   const parentCommit = await readJson<GitHubCommitResponse & { tree: { sha: string } }>(
     await fetchImpl(
       `https://api.github.com/repos/${encodedOwner}/${encodedName}/git/commits/${githubPathSegment(parentSha)}`,
@@ -433,6 +449,19 @@ export function createGitHubAppClient({
 
       return files;
     },
+    async getBranchHead({ owner, name, branch }: GetBranchHeadInput) {
+      const headers = await withInstallationHeaders();
+      const encodedOwner = githubPathSegment(owner);
+      const encodedName = githubPathSegment(name);
+      const ref = await readJson<GitHubRefResponse>(
+        await fetchImpl(
+          `https://api.github.com/repos/${encodedOwner}/${encodedName}/git/ref/${githubRefPath("heads", branch)}`,
+          { method: "GET", headers },
+        ),
+      );
+
+      return { sha: ref.object.sha };
+    },
     async commitFiles(input: CommitFilesInput) {
       const headers = await withInstallationHeaders();
 
@@ -448,6 +477,13 @@ export function createGitHubAppClient({
           { method: "GET", headers },
         ),
       );
+
+      if (
+        input.expectedHeadSha &&
+        baseRef.object.sha !== input.expectedHeadSha
+      ) {
+        throw new Error(STALE_REPOSITORY_HEAD_ERROR);
+      }
 
       await readJson<{ ref: string }>(
         await fetchImpl(`https://api.github.com/repos/${encodedOwner}/${encodedName}/git/refs`, {

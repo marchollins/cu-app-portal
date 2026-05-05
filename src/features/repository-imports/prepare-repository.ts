@@ -1,5 +1,6 @@
 import {
   PUBLISHING_BUNDLE_PATHS,
+  type CompatibilityFinding,
   scanRepositoryCompatibility,
 } from "./compatibility";
 import { planPublishingBundle } from "./publishing-bundle";
@@ -7,6 +8,11 @@ import { planPublishingBundle } from "./publishing-bundle";
 type PreparationMode = "DIRECT_COMMIT" | "PULL_REQUEST";
 
 type GitHubPreparationClient = {
+  getBranchHead(input: {
+    owner: string;
+    name: string;
+    branch: string;
+  }): Promise<{ sha: string }>;
   readRepositoryTextFiles(input: {
     owner: string;
     name: string;
@@ -18,6 +24,7 @@ type GitHubPreparationClient = {
     name: string;
     branch: string;
     message: string;
+    expectedHeadSha?: string;
     files: Record<string, string>;
   }): Promise<{ commitSha: string }>;
   createPullRequestWithFiles(input: {
@@ -28,6 +35,7 @@ type GitHubPreparationClient = {
     title: string;
     body: string;
     message: string;
+    expectedHeadSha?: string;
     files: Record<string, string>;
   }): Promise<{ commitSha: string; pullRequestUrl: string }>;
 };
@@ -67,6 +75,30 @@ function buildPullRequestBody(appName: string) {
   ].join("\n");
 }
 
+function formatCompatibilityError(
+  leadingMessage: string,
+  findings: CompatibilityFinding[],
+) {
+  const details = findings
+    .filter((finding) => finding.severity === "error")
+    .map((finding) =>
+      finding.path
+        ? `${finding.path}: ${finding.message}`
+        : finding.message,
+    );
+
+  return [leadingMessage, ...details].join(" ");
+}
+
+function sanitizeBranchSegment(value: string) {
+  const sanitized = value
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "");
+
+  return sanitized || "repository";
+}
+
 export async function prepareImportedRepository({
   appName,
   owner,
@@ -75,20 +107,35 @@ export async function prepareImportedRepository({
   mode,
   github,
 }: PrepareImportedRepositoryInput) {
+  const head = await github.getBranchHead({
+    owner,
+    name,
+    branch: defaultBranch,
+  });
   const files = await github.readRepositoryTextFiles({
     owner,
     name,
-    ref: defaultBranch,
+    ref: head.sha,
     paths: READ_PATHS,
   });
   const compatibility = scanRepositoryCompatibility(files);
 
   if (compatibility.status === "CONFLICTED") {
-    throw new Error("Repository has publishing file conflicts.");
+    throw new Error(
+      formatCompatibilityError(
+        "Repository has publishing file conflicts.",
+        compatibility.findings,
+      ),
+    );
   }
 
   if (compatibility.status === "UNSUPPORTED") {
-    throw new Error("Repository is not compatible with v1 Azure publishing.");
+    throw new Error(
+      formatCompatibilityError(
+        "Repository is not compatible with v1 Azure publishing.",
+        compatibility.findings,
+      ),
+    );
   }
 
   const plan = planPublishingBundle({
@@ -104,6 +151,7 @@ export async function prepareImportedRepository({
       name,
       branch: defaultBranch,
       message: "Add Azure publishing support",
+      expectedHeadSha: head.sha,
       files: plan.filesToWrite,
     });
 
@@ -114,7 +162,7 @@ export async function prepareImportedRepository({
     };
   }
 
-  const branch = "portal/add-azure-publishing";
+  const branch = `portal/add-azure-publishing-${sanitizeBranchSegment(name)}`;
   const pullRequest = await github.createPullRequestWithFiles({
     owner,
     name,
@@ -123,6 +171,7 @@ export async function prepareImportedRepository({
     title: "Add Azure publishing support",
     body: buildPullRequestBody(appName),
     message: "Add Azure publishing support",
+    expectedHeadSha: head.sha,
     files: plan.filesToWrite,
   });
 
