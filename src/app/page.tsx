@@ -11,6 +11,8 @@ export default function HomePage() {
       </p>
       <Link href="/create">Create New App</Link>
       {" | "}
+      <Link href="/apps/add">Add Existing App</Link>
+      {" | "}
       <Link href="/apps">My Apps</Link>
     </main>
   );
