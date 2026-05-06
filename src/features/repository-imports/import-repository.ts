@@ -267,6 +267,40 @@ function sanitizeGitErrorDetail(value: string) {
     .replaceAll(/\.$/g, "");
 }
 
+function isHiddenRefPushFailure(error: unknown) {
+  const detail = getGitErrorText(error);
+
+  return detail ? /deny updating a hidden ref|hidden ref/i.test(detail) : false;
+}
+
+async function pushDefaultBranch({
+  exec,
+  mirrorDir,
+  targetCredentialsPath,
+  repository,
+  defaultBranch,
+}: {
+  exec: GitExec;
+  mirrorDir: string;
+  targetCredentialsPath: string;
+  repository: RepositoryMetadata;
+  defaultBranch: string;
+}) {
+  await exec(
+    "git",
+    [
+      ...credentialHelperArgs(targetCredentialsPath),
+      "push",
+      createRemote({
+        owner: repository.owner,
+        name: repository.name,
+      }),
+      `refs/heads/${defaultBranch}:refs/heads/${defaultBranch}`,
+    ],
+    { cwd: mirrorDir, stdio: "ignore" },
+  );
+}
+
 function toImportError({
   error,
   stage,
@@ -383,7 +417,25 @@ export async function importRepositoryWithHistory({
         { cwd: mirrorDir, stdio: "ignore" },
       );
     } catch (error) {
-      throw toImportError({ error, stage: "push", targetRepository: repository });
+      if (!isHiddenRefPushFailure(error)) {
+        throw toImportError({ error, stage: "push", targetRepository: repository });
+      }
+
+      try {
+        await pushDefaultBranch({
+          exec,
+          mirrorDir,
+          targetCredentialsPath,
+          repository,
+          defaultBranch: source.defaultBranch,
+        });
+      } catch (fallbackError) {
+        throw toImportError({
+          error: fallbackError,
+          stage: "push",
+          targetRepository: repository,
+        });
+      }
     }
 
     try {

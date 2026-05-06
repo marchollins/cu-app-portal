@@ -281,6 +281,74 @@ describe("importRepositoryWithHistory", () => {
     expect(rm).toHaveBeenCalledWith(tempRoot, { recursive: true, force: true });
   });
 
+  it("falls back to the default branch when mirror push rejects hidden refs", async () => {
+    const tempRoot = join(tmpdir(), "portal-import-hidden-ref-fallback");
+    const exec = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(
+        Object.assign(new Error("git push failed"), {
+          stderr:
+            "remote: error: GH013: Repository rule violations found for refs/pull/1/head.\nremote: deny updating a hidden ref\n",
+        }),
+      )
+      .mockResolvedValueOnce(undefined);
+    const github = {
+      createInstallationTokenForGit: vi.fn().mockResolvedValue("target-token"),
+      createRepository: vi.fn().mockResolvedValue({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        url: "https://github.com/cedarville-it/campus-dashboard",
+        defaultBranch: "main",
+      }),
+      updateRepositoryDefaultBranch: vi.fn().mockResolvedValue({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        url: "https://github.com/cedarville-it/campus-dashboard",
+        defaultBranch: "trunk",
+      }),
+    };
+    vi.mocked(mkdtemp).mockResolvedValue(tempRoot);
+
+    const repository = await importRepositoryWithHistory({
+      source: {
+        owner: "external-org",
+        name: "Campus-Dashboard",
+        url: "https://github.com/external-org/Campus-Dashboard",
+        defaultBranch: "trunk",
+      },
+      target: {
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        visibility: "private",
+      },
+      github,
+      exec,
+    });
+
+    expect(repository).toEqual({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      url: "https://github.com/cedarville-it/campus-dashboard",
+      defaultBranch: "trunk",
+    });
+    expect(exec).toHaveBeenNthCalledWith(3, "git", [
+      "-c",
+      `credential.helper=store --file=${join(tempRoot, "target-credentials")}`,
+      "push",
+      "https://github.com/cedarville-it/campus-dashboard.git",
+      "refs/heads/trunk:refs/heads/trunk",
+    ], {
+      cwd: join(tempRoot, "source.git"),
+      stdio: "ignore",
+    });
+    expect(github.updateRepositoryDefaultBranch).toHaveBeenCalledWith({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      defaultBranch: "trunk",
+    });
+  });
+
   it("preserves created target metadata when target token acquisition fails", async () => {
     const tempRoot = join(tmpdir(), "portal-import-target-token-failure");
     const exec = vi.fn().mockResolvedValue(undefined);
