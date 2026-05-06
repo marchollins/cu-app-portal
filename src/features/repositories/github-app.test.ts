@@ -16,6 +16,24 @@ function createJsonResponse(body: unknown, init?: ResponseInit) {
 }
 
 describe("createGitHubAppClient", () => {
+  it("returns an installation token for authenticated git remotes", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }));
+
+    const client = createGitHubAppClient({
+      appId: "12345",
+      privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      installationId: "111",
+      fetchImpl,
+    });
+
+    await expect(client.createInstallationTokenForGit()).resolves.toBe(
+      "installation-token",
+    );
+  });
+
   it("sets an actions secret using the repository public key", async () => {
     await sodium.ready;
     const { publicKey } = sodium.crypto_box_keypair();

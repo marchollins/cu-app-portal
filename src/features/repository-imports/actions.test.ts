@@ -10,6 +10,7 @@ import {
   verifyExistingAppPreparationAction,
 } from "./actions";
 import { PUBLISHING_BUNDLE_PATHS } from "./compatibility";
+import { importRepositoryWithHistory } from "./import-repository";
 import { prepareImportedRepository } from "./prepare-repository";
 
 vi.mock("next/cache", () => ({
@@ -41,6 +42,8 @@ vi.mock("@/features/repositories/config", () => ({
 
 vi.mock("@/features/repositories/github-app", () => ({
   createGitHubAppClient: vi.fn(() => ({
+    createInstallationTokenForGit: vi.fn(),
+    createRepository: vi.fn(),
     getRepository: vi.fn(),
     getBranchHead: vi.fn(),
     readRepositoryTextFiles: vi.fn(),
@@ -66,12 +69,18 @@ vi.mock("./prepare-repository", () => ({
   prepareImportedRepository: vi.fn(),
 }));
 
+vi.mock("./import-repository", () => ({
+  importRepositoryWithHistory: vi.fn(),
+}));
+
 describe("repository import actions", () => {
   beforeEach(() => {
     vi.mocked(resolveCurrentUserId).mockReset();
     vi.mocked(loadGitHubAppConfig).mockClear();
     vi.mocked(createGitHubAppClient).mockReset();
     vi.mocked(createGitHubAppClient).mockReturnValue({
+      createInstallationTokenForGit: vi.fn(),
+      createRepository: vi.fn(),
       getRepository: vi.fn(),
       getBranchHead: vi.fn(),
       readRepositoryTextFiles: vi.fn(),
@@ -92,6 +101,7 @@ describe("repository import actions", () => {
       callback(prisma),
     );
     vi.mocked(prepareImportedRepository).mockReset();
+    vi.mocked(importRepositoryWithHistory).mockReset();
   });
 
   it("creates an imported app request for a shared-org repo", async () => {
@@ -144,6 +154,137 @@ describe("repository import actions", () => {
         supportReference: "SUP-123",
       }),
     );
+    expect(importRepositoryWithHistory).not.toHaveBeenCalled();
+  });
+
+  it("imports external repositories into the shared org before creating ready records", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.template.upsert).mockResolvedValue({
+      id: "template-imported",
+    } as Awaited<ReturnType<typeof prisma.template.upsert>>);
+    vi.mocked(prisma.appRequest.create).mockResolvedValue({
+      id: "req_external",
+      supportReference: "SUP-123",
+    } as Awaited<ReturnType<typeof prisma.appRequest.create>>);
+    vi.mocked(importRepositoryWithHistory).mockResolvedValue({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      url: "https://github.com/cedarville-it/campus-dashboard",
+      defaultBranch: "main",
+    });
+
+    const formData = new FormData();
+    formData.set("repositoryUrl", "https://github.com/external-org/Campus-Dashboard");
+    formData.set("appName", "Campus Dashboard");
+
+    await addExistingAppAction(formData, {
+      defaultOrg: "cedarville-it",
+      repository: {
+        owner: "external-org",
+        name: "Campus-Dashboard",
+        url: "https://github.com/external-org/Campus-Dashboard",
+        defaultBranch: "trunk",
+      },
+    });
+
+    expect(importRepositoryWithHistory).toHaveBeenCalledWith({
+      source: {
+        owner: "external-org",
+        name: "Campus-Dashboard",
+        url: "https://github.com/external-org/Campus-Dashboard",
+        defaultBranch: "trunk",
+      },
+      target: {
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        visibility: "private",
+      },
+      github: expect.objectContaining({
+        createRepository: expect.any(Function),
+        createInstallationTokenForGit: expect.any(Function),
+      }),
+    });
+    expect(prisma.appRequest.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
+        repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        repositoryDefaultBranch: "main",
+        repositoryVisibility: "private",
+        repositoryStatus: "READY",
+        publishErrorSummary: null,
+      }),
+    });
+    expect(prisma.repositoryImport.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sourceRepositoryOwner: "external-org",
+        sourceRepositoryName: "Campus-Dashboard",
+        sourceRepositoryDefaultBranch: "trunk",
+        targetRepositoryOwner: "cedarville-it",
+        targetRepositoryName: "campus-dashboard",
+        targetRepositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        targetRepositoryDefaultBranch: "main",
+        importStatus: "SUCCEEDED",
+        importErrorSummary: null,
+        preparationStatus: "PENDING_USER_CHOICE",
+      }),
+    });
+  });
+
+  it("keeps support history when external repository import fails", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.template.upsert).mockResolvedValue({
+      id: "template-imported",
+    } as Awaited<ReturnType<typeof prisma.template.upsert>>);
+    vi.mocked(prisma.appRequest.create).mockResolvedValue({
+      id: "req_failed_import",
+      supportReference: "SUP-123",
+    } as Awaited<ReturnType<typeof prisma.appRequest.create>>);
+    vi.mocked(importRepositoryWithHistory).mockRejectedValue(
+      new Error("Repository import failed while mirroring git history."),
+    );
+
+    const formData = new FormData();
+    formData.set("repositoryUrl", "https://github.com/external-org/Campus-Dashboard");
+    formData.set("appName", "Campus Dashboard");
+
+    await expect(
+      addExistingAppAction(formData, {
+        defaultOrg: "cedarville-it",
+        repository: {
+          owner: "external-org",
+          name: "Campus-Dashboard",
+          url: "https://github.com/external-org/Campus-Dashboard",
+          defaultBranch: "trunk",
+        },
+      }),
+    ).resolves.toEqual({ requestId: "req_failed_import" });
+
+    expect(prisma.appRequest.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
+        repositoryUrl: null,
+        repositoryDefaultBranch: null,
+        repositoryVisibility: "private",
+        repositoryStatus: "FAILED",
+        publishErrorSummary: "Repository import failed while mirroring git history.",
+      }),
+    });
+    expect(prisma.repositoryImport.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sourceRepositoryOwner: "external-org",
+        sourceRepositoryName: "Campus-Dashboard",
+        sourceRepositoryDefaultBranch: "trunk",
+        targetRepositoryOwner: "cedarville-it",
+        targetRepositoryName: "campus-dashboard",
+        targetRepositoryUrl: null,
+        targetRepositoryDefaultBranch: null,
+        importStatus: "FAILED",
+        importErrorSummary: "Repository import failed while mirroring git history.",
+        preparationStatus: "BLOCKED",
+      }),
+    });
   });
 
   it("resolves repository metadata before creating ready records", async () => {
@@ -162,6 +303,8 @@ describe("repository import actions", () => {
         url: "https://github.com/cedarville-it/campus-dashboard",
         defaultBranch: "trunk",
       }),
+      createInstallationTokenForGit: vi.fn(),
+      createRepository: vi.fn(),
       getBranchHead: vi.fn(),
       readRepositoryTextFiles: vi.fn(),
       commitFiles: vi.fn(),
@@ -215,6 +358,8 @@ describe("repository import actions", () => {
         url: "https://github.com/cedarville-it/campus-dashboard",
         defaultBranch: "main",
       }),
+      createInstallationTokenForGit: vi.fn(),
+      createRepository: vi.fn(),
       getBranchHead: vi.fn(),
       readRepositoryTextFiles: vi.fn(),
       commitFiles: vi.fn(),

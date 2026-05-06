@@ -8,10 +8,11 @@ import { createGitHubAppClient } from "@/features/repositories/github-app";
 import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { createSupportReference } from "@/lib/support-reference";
+import { importRepositoryWithHistory } from "./import-repository";
 import { prepareImportedRepository } from "./prepare-repository";
 import { verifyImportedPublishReadiness } from "./publish-readiness";
 import { parseGitHubRepositoryUrl } from "./repo-url";
-import { isRepositoryInOrg } from "./target-name";
+import { buildSharedOrgTargetName, isRepositoryInOrg } from "./target-name";
 
 const addExistingAppSchema = z.object({
   repositoryUrl: z.string().min(1),
@@ -29,6 +30,7 @@ type AddExistingAppDeps = {
     url: string;
     defaultBranch: string;
   };
+  importRepository?: typeof importRepositoryWithHistory;
 };
 
 type PrepareExistingAppDeps = {
@@ -127,10 +129,56 @@ export async function addExistingAppAction(
   });
   const userId = await resolveCurrentUserId();
   const source = parseGitHubRepositoryUrl(parsed.repositoryUrl);
-  const defaultOrg = deps.defaultOrg ?? loadGitHubAppConfig().defaultOrg;
+  const githubConfig = loadGitHubAppConfig();
+  const defaultOrg = deps.defaultOrg ?? githubConfig.defaultOrg;
+  const repositoryVisibility = githubConfig.defaultRepoVisibility;
   const repository = await resolveRepository(source, deps);
   const supportReference = createSupportReference();
   const isSharedOrgRepo = isRepositoryInOrg(repository.owner, defaultOrg);
+  const targetName = isSharedOrgRepo
+    ? repository.name
+    : buildSharedOrgTargetName({
+        sourceName: repository.name,
+        existingNames: [],
+      });
+  let targetRepository = repository;
+  let repositoryStatus: "READY" | "FAILED" = "READY";
+  let importStatus: "NOT_REQUIRED" | "SUCCEEDED" | "FAILED" = isSharedOrgRepo
+    ? "NOT_REQUIRED"
+    : "SUCCEEDED";
+  let importErrorSummary: string | null = null;
+  let preparationStatus: "PENDING_USER_CHOICE" | "BLOCKED" =
+    "PENDING_USER_CHOICE";
+  let publishErrorSummary: string | null = null;
+
+  if (!isSharedOrgRepo) {
+    try {
+      targetRepository = await (deps.importRepository ?? importRepositoryWithHistory)({
+        source: repository,
+        target: {
+          owner: defaultOrg,
+          name: targetName,
+          visibility: repositoryVisibility,
+        },
+        github: createGitHubClientForOwner(defaultOrg),
+      });
+    } catch (error) {
+      const message = summarizeError(error);
+
+      targetRepository = {
+        owner: defaultOrg,
+        name: targetName,
+        url: "",
+        defaultBranch: "",
+      };
+      repositoryStatus = "FAILED";
+      importStatus = "FAILED";
+      importErrorSummary = message;
+      preparationStatus = "BLOCKED";
+      publishErrorSummary = message;
+    }
+  }
+
   const request = await prisma.$transaction(async (tx) => {
     const template = await upsertImportedTemplate(tx);
     const appRequest = await tx.appRequest.create({
@@ -149,13 +197,14 @@ export async function addExistingAppAction(
         deploymentTarget: "Azure App Service",
         sourceOfTruth: "IMPORTED_REPOSITORY",
         repositoryProvider: "GITHUB",
-        repositoryOwner: repository.owner,
-        repositoryName: repository.name,
-        repositoryUrl: repository.url,
-        repositoryDefaultBranch: repository.defaultBranch,
-        repositoryVisibility: null,
-        repositoryStatus: "READY",
+        repositoryOwner: targetRepository.owner,
+        repositoryName: targetRepository.name,
+        repositoryUrl: targetRepository.url || null,
+        repositoryDefaultBranch: targetRepository.defaultBranch || null,
+        repositoryVisibility: isSharedOrgRepo ? null : repositoryVisibility,
+        repositoryStatus,
         publishStatus: "NOT_STARTED",
+        publishErrorSummary,
       },
     });
 
@@ -166,14 +215,15 @@ export async function addExistingAppAction(
         sourceRepositoryOwner: source.owner,
         sourceRepositoryName: source.name,
         sourceRepositoryDefaultBranch: repository.defaultBranch,
-        targetRepositoryOwner: repository.owner,
-        targetRepositoryName: repository.name,
-        targetRepositoryUrl: repository.url,
-        targetRepositoryDefaultBranch: repository.defaultBranch,
-        importStatus: isSharedOrgRepo ? "NOT_REQUIRED" : "PENDING",
+        targetRepositoryOwner: targetRepository.owner,
+        targetRepositoryName: targetRepository.name,
+        targetRepositoryUrl: targetRepository.url || null,
+        targetRepositoryDefaultBranch: targetRepository.defaultBranch || null,
+        importStatus,
+        importErrorSummary,
         compatibilityStatus: "NOT_SCANNED",
         compatibilityFindings: [],
-        preparationStatus: "PENDING_USER_CHOICE",
+        preparationStatus,
       },
     });
 
@@ -184,8 +234,22 @@ export async function addExistingAppAction(
     requestId: request.id,
     supportReference,
     sourceRepositoryUrl: source.normalizedUrl,
-    targetRepositoryUrl: repository.url,
+    targetRepositoryUrl: targetRepository.url || null,
   });
+
+  if (!isSharedOrgRepo) {
+    await recordAuditEvent(
+      importStatus === "SUCCEEDED"
+        ? "EXISTING_APP_IMPORT_SUCCEEDED"
+        : "EXISTING_APP_IMPORT_FAILED",
+      {
+        requestId: request.id,
+        sourceRepository: `${source.owner}/${source.name}`,
+        targetRepository: `${targetRepository.owner}/${targetRepository.name}`,
+        error: importErrorSummary,
+      },
+    );
+  }
 
   revalidatePath("/apps");
 

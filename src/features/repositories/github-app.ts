@@ -405,6 +405,9 @@ export function createGitHubAppClient({
   }
 
   return {
+    async createInstallationTokenForGit() {
+      return createInstallationToken();
+    },
     async getRepository({ owner, name }: GetRepositoryInput) {
       const headers = await withInstallationHeaders();
       const repository = await readJson<GitHubRepositoryResponse & { private?: boolean }>(
