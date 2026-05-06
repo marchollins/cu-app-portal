@@ -21,6 +21,7 @@ function renderRepositoryStatus(
   repositoryUrl: string | null,
   appName: string,
   requestId: string,
+  artifactAvailable: boolean,
 ) {
   if (status === "READY" && repositoryUrl) {
     const codexPrompt = buildCodexHandoffPrompt(
@@ -45,11 +46,16 @@ function renderRepositoryStatus(
   }
 
   if (status === "FAILED") {
-    return (
+    return artifactAvailable ? (
       <p>
         Repo setup failed. The ZIP is still available, and an operator may need
         to fix the GitHub App or org configuration before portal publishing can
         continue.
+      </p>
+    ) : (
+      <p>
+        Repo setup failed. An operator may need to fix the GitHub App or org
+        configuration before portal publishing can continue.
       </p>
     );
   }
@@ -260,7 +266,13 @@ export default async function DownloadPage({
     },
   });
 
-  if (!appRequest?.artifact) {
+  if (!appRequest) {
+    notFound();
+  }
+
+  const isImportedApp = appRequest.sourceOfTruth === "IMPORTED_REPOSITORY";
+
+  if (!appRequest.artifact && !isImportedApp) {
     notFound();
   }
 
@@ -272,12 +284,19 @@ export default async function DownloadPage({
   return (
     <main>
       <LogoutButton />
-      <h1>Your App Is Ready</h1>
-      <p>
-        The portal generated the ZIP artifact and tracks the managed GitHub
-        repository for supported publishing.
-      </p>
-      {appRequest.repositoryStatus === "FAILED" ? (
+      <h1>{isImportedApp ? "Imported App Details" : "Your App Is Ready"}</h1>
+      {isImportedApp ? (
+        <p>
+          The portal tracks this imported GitHub repository for supported
+          Azure publishing.
+        </p>
+      ) : (
+        <p>
+          The portal generated the ZIP artifact and tracks the managed GitHub
+          repository for supported publishing.
+        </p>
+      )}
+      {appRequest.artifact && appRequest.repositoryStatus === "FAILED" ? (
         <Link href={`/api/download/${requestId}`}>Download ZIP</Link>
       ) : null}
       {renderRepositoryStatus(
@@ -285,6 +304,7 @@ export default async function DownloadPage({
         appRequest.repositoryUrl,
         appRequest.appName,
         requestId,
+        Boolean(appRequest.artifact),
       )}
       {renderRepositoryAccessSection(
         requestId,

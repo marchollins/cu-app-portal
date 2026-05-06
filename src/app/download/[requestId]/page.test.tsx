@@ -103,7 +103,9 @@ describe("DownloadPage", () => {
     expect(
       screen.queryByText(/create a new github repository/i),
     ).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /download zip/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /download zip/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/repo access granted/i)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /publish to azure/i }),
@@ -161,6 +163,53 @@ describe("DownloadPage", () => {
     expect(
       screen.queryByRole("button", { name: /retry publish/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows imported app details even when no generated artifact exists", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_import_no_artifact",
+      appName: "Campus Dashboard",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      repositoryStatus: "READY",
+      repositoryAccessStatus: "GRANTED",
+      repositoryAccessNote: null,
+      repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+      publishStatus: "NOT_STARTED",
+      publishUrl: null,
+      primaryPublishUrl: null,
+      azureWebAppName: null,
+      publishErrorSummary: null,
+      repositoryImport: {
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
+      artifact: null,
+      publishAttempts: [],
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(
+      await DownloadPage({
+        params: Promise.resolve({ requestId: "req_import_no_artifact" }),
+      }),
+    );
+
+    expect(
+      screen.getByRole("heading", { name: /imported app details/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", {
+        name: "https://github.com/cedarville-it/campus-dashboard",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /download zip/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /azure publishing unavailable until repository preparation is committed/i,
+      ),
+    ).toBeInTheDocument();
   });
 
   it("shows publish actions for committed imported apps", async () => {
