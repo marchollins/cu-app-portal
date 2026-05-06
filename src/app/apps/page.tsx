@@ -13,6 +13,7 @@ import {
 } from "@/features/repositories/actions";
 import { buildCodexHandoffPrompt } from "@/features/repositories/codex-handoff";
 import { CopyCodexHandoffButton } from "@/features/repositories/copy-codex-handoff-button";
+import { prepareExistingAppAction } from "@/features/repository-imports/actions";
 import { prisma } from "@/lib/db";
 
 const PREPARATION_REQUIRED_MESSAGE =
@@ -131,6 +132,69 @@ function renderPublishMetadata({
         </p>
       ) : null}
     </>
+  );
+}
+
+function renderImportedRepositoryStatus(request: {
+  id: string;
+  repositoryImport: {
+    sourceRepositoryUrl: string;
+    importStatus: string;
+    compatibilityStatus: string;
+    preparationStatus: string;
+    preparationPullRequestUrl?: string | null;
+    preparationErrorSummary?: string | null;
+  } | null;
+}) {
+  const repositoryImport = request.repositoryImport;
+
+  if (!repositoryImport) {
+    return null;
+  }
+
+  const prepareAction = prepareExistingAppAction.bind(null, request.id);
+
+  return (
+    <section aria-label="Imported repository status">
+      <h3>Imported repository status</h3>
+      <p>Source repo: {repositoryImport.sourceRepositoryUrl}</p>
+      <p>Import: {formatStatus(repositoryImport.importStatus)}</p>
+      <p>
+        Compatibility: {formatStatus(repositoryImport.compatibilityStatus)}
+      </p>
+      <p>Preparation: {formatStatus(repositoryImport.preparationStatus)}</p>
+      {repositoryImport.preparationPullRequestUrl ? (
+        <p>
+          Preparation PR:{" "}
+          <a href={repositoryImport.preparationPullRequestUrl}>
+            {repositoryImport.preparationPullRequestUrl}
+          </a>
+        </p>
+      ) : null}
+      {repositoryImport.preparationErrorSummary ? (
+        <p>Preparation error: {repositoryImport.preparationErrorSummary}</p>
+      ) : null}
+      {repositoryImport.preparationStatus === "PENDING_USER_CHOICE" ? (
+        <>
+          <form action={prepareAction}>
+            <input
+              name="preparationMode"
+              type="hidden"
+              value="DIRECT_COMMIT"
+            />
+            <button type="submit">Commit Azure Publishing Additions</button>
+          </form>
+          <form action={prepareAction}>
+            <input
+              name="preparationMode"
+              type="hidden"
+              value="PULL_REQUEST"
+            />
+            <button type="submit">Open Azure Publishing PR</button>
+          </form>
+        </>
+      ) : null}
+    </section>
   );
 }
 
@@ -312,6 +376,10 @@ export default async function MyAppsPage() {
                 publishUrl: request.publishUrl,
                 githubWorkflowRunUrl:
                   request.publishAttempts[0]?.githubWorkflowRunUrl ?? null,
+              })}
+              {renderImportedRepositoryStatus({
+                id: request.id,
+                repositoryImport: request.repositoryImport,
               })}
               <p>
                 <Link href={`/download/${request.id}`}>Open app details</Link>
