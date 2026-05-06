@@ -30,6 +30,7 @@ type AddExistingAppDeps = {
     url: string;
     defaultBranch: string;
   };
+  publicRepositoryFetch?: typeof fetch;
   importRepository?: typeof importRepositoryWithHistory;
 };
 
@@ -45,6 +46,27 @@ type RepositoryImportWriteClient = Pick<
   typeof prisma,
   "appRequest" | "repositoryImport" | "template"
 >;
+
+type RepositoryMetadata = {
+  owner: string;
+  name: string;
+  url: string;
+  defaultBranch: string;
+};
+
+type ResolvedRepository = {
+  repository: RepositoryMetadata;
+  github?: ReturnType<typeof createGitHubAppClient>;
+};
+
+type GitHubPublicRepositoryResponse = {
+  html_url: string;
+  default_branch: string;
+  name: string;
+  owner: {
+    login: string;
+  };
+};
 
 async function upsertImportedTemplate(db: RepositoryImportWriteClient) {
   return db.template.upsert({
@@ -83,8 +105,10 @@ function resolveInstallationId(
   return installation?.[1] ?? null;
 }
 
-function createGitHubClientForOwner(owner: string) {
-  const config = loadGitHubAppConfig();
+function createGitHubClientForOwner(
+  owner: string,
+  config = loadGitHubAppConfig(),
+) {
   const installationId = resolveInstallationId(config.installationIdsByOrg, owner);
 
   if (!installationId) {
@@ -100,22 +124,118 @@ function createGitHubClientForOwner(owner: string) {
   });
 }
 
+function tryCreateGitHubClientForOwner(
+  owner: string,
+  config: ReturnType<typeof loadGitHubAppConfig>,
+) {
+  const installationId = resolveInstallationId(config.installationIdsByOrg, owner);
+
+  if (!installationId) {
+    return null;
+  }
+
+  return createGitHubAppClient({
+    appId: config.appId,
+    privateKey: config.privateKey,
+    installationId,
+  });
+}
+
+async function fetchPublicRepositoryMetadata(
+  source: ReturnType<typeof parseGitHubRepositoryUrl>,
+  fetchImpl: typeof fetch,
+): Promise<RepositoryMetadata> {
+  const response = await fetchImpl(
+    `https://api.github.com/repos/${encodeURIComponent(source.owner)}/${encodeURIComponent(source.name)}`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    },
+  );
+  const responseText = await response.text();
+  const data = responseText
+    ? (JSON.parse(responseText) as GitHubPublicRepositoryResponse)
+    : null;
+
+  if (!response.ok || !data) {
+    throw new Error(
+      `GitHub public repository metadata lookup failed: ${response.status} ${response.statusText}`.trim(),
+    );
+  }
+
+  return {
+    owner: data.owner.login,
+    name: data.name,
+    url: data.html_url,
+    defaultBranch: data.default_branch,
+  };
+}
+
 async function resolveRepository(
   source: ReturnType<typeof parseGitHubRepositoryUrl>,
   deps: AddExistingAppDeps,
-) {
+  config: ReturnType<typeof loadGitHubAppConfig>,
+): Promise<ResolvedRepository> {
   if (deps.repository) {
-    return deps.repository;
+    return { repository: deps.repository };
   }
 
-  return createGitHubClientForOwner(source.owner).getRepository({
-    owner: source.owner,
-    name: source.name,
-  });
+  const sourceGithub = tryCreateGitHubClientForOwner(source.owner, config);
+
+  if (sourceGithub) {
+    try {
+      return {
+        repository: await sourceGithub.getRepository({
+          owner: source.owner,
+          name: source.name,
+        }),
+        github: sourceGithub,
+      };
+    } catch {
+      // Public metadata fallback below intentionally avoids leaking private lookup details.
+    }
+  }
+
+  return {
+    repository: await fetchPublicRepositoryMetadata(
+      source,
+      deps.publicRepositoryFetch ?? fetch,
+    ),
+  };
 }
 
 function summarizeError(error: unknown) {
   return error instanceof Error ? error.message : "unknown";
+}
+
+function getFailedTargetRepository({
+  error,
+  fallback,
+}: {
+  error: unknown;
+  fallback: RepositoryMetadata;
+}) {
+  if (
+    error instanceof Error &&
+    "targetRepository" in error &&
+    error.targetRepository &&
+    typeof error.targetRepository === "object"
+  ) {
+    return error.targetRepository as RepositoryMetadata;
+  }
+
+  return fallback;
+}
+
+function isTargetNameCollision(error: unknown) {
+  return (
+    error instanceof Error &&
+      "code" in error &&
+      error.code === "TARGET_REPOSITORY_ALREADY_EXISTS"
+  );
 }
 
 export async function addExistingAppAction(
@@ -132,10 +252,14 @@ export async function addExistingAppAction(
   const githubConfig = loadGitHubAppConfig();
   const defaultOrg = deps.defaultOrg ?? githubConfig.defaultOrg;
   const repositoryVisibility = githubConfig.defaultRepoVisibility;
-  const repository = await resolveRepository(source, deps);
+  const { repository, github: sourceGithub } = await resolveRepository(
+    source,
+    deps,
+    githubConfig,
+  );
   const supportReference = createSupportReference();
   const isSharedOrgRepo = isRepositoryInOrg(repository.owner, defaultOrg);
-  const targetName = isSharedOrgRepo
+  let targetName = isSharedOrgRepo
     ? repository.name
     : buildSharedOrgTargetName({
         sourceName: repository.name,
@@ -152,25 +276,48 @@ export async function addExistingAppAction(
   let publishErrorSummary: string | null = null;
 
   if (!isSharedOrgRepo) {
+    const targetGithub = createGitHubClientForOwner(defaultOrg, githubConfig);
+    const existingNames: string[] = [];
     try {
-      targetRepository = await (deps.importRepository ?? importRepositoryWithHistory)({
-        source: repository,
-        target: {
-          owner: defaultOrg,
-          name: targetName,
-          visibility: repositoryVisibility,
-        },
-        github: createGitHubClientForOwner(defaultOrg),
-      });
+      for (let attempt = 0; attempt < 99; attempt += 1) {
+        targetName = buildSharedOrgTargetName({
+          sourceName: repository.name,
+          existingNames,
+        });
+
+        try {
+          targetRepository = await (deps.importRepository ?? importRepositoryWithHistory)({
+            source: repository,
+            target: {
+              owner: defaultOrg,
+              name: targetName,
+              visibility: repositoryVisibility,
+            },
+            sourceGithub,
+            github: targetGithub,
+          });
+          break;
+        } catch (error) {
+          if (isTargetNameCollision(error)) {
+            existingNames.push(targetName);
+            continue;
+          }
+
+          throw error;
+        }
+      }
     } catch (error) {
       const message = summarizeError(error);
 
-      targetRepository = {
-        owner: defaultOrg,
-        name: targetName,
-        url: "",
-        defaultBranch: "",
-      };
+      targetRepository = getFailedTargetRepository({
+        error,
+        fallback: {
+          owner: defaultOrg,
+          name: targetName,
+          url: "",
+          defaultBranch: "",
+        },
+      });
       repositoryStatus = "FAILED";
       importStatus = "FAILED";
       importErrorSummary = message;

@@ -18,7 +18,14 @@ type CreateRepositoryInput = {
   visibility: GitHubRepoVisibility;
   files: Record<string, string>;
   defaultBranch: string;
+  autoInit?: boolean;
   reuseIfAlreadyExists?: boolean;
+};
+
+type UpdateRepositoryDefaultBranchInput = {
+  owner: string;
+  name: string;
+  defaultBranch: string;
 };
 
 type AddRepositoryCollaboratorInput = {
@@ -245,6 +252,15 @@ function githubRefPath(...segments: string[]) {
 
 function decodeGitHubBase64Content(data: GitHubContentResponse) {
   return Buffer.from(data.content.replaceAll(/\s/g, ""), "base64").toString("utf8");
+}
+
+function toRepositoryMetadata(repository: GitHubRepositoryResponse) {
+  return {
+    owner: repository.owner.login,
+    name: repository.name,
+    url: repository.html_url,
+    defaultBranch: repository.default_branch,
+  };
 }
 
 function isRetriableGitHubConflict(error: unknown) {
@@ -533,6 +549,7 @@ export function createGitHubAppClient({
       visibility,
       files,
       defaultBranch,
+      autoInit = true,
       reuseIfAlreadyExists = false,
     }: CreateRepositoryInput) {
       const headers = await withInstallationHeaders();
@@ -544,7 +561,7 @@ export function createGitHubAppClient({
           body: JSON.stringify({
             name,
             visibility,
-            auto_init: true,
+            auto_init: autoInit,
           }),
         },
       );
@@ -575,6 +592,10 @@ export function createGitHubAppClient({
         } catch {
           throw error;
         }
+      }
+
+      if (!autoInit) {
+        return toRepositoryMetadata(repository);
       }
 
       let updatedRepository: GitHubRepositoryResponse | null = null;
@@ -682,12 +703,26 @@ export function createGitHubAppClient({
         throw new Error("GitHub repository initialization did not complete.");
       }
 
-      return {
-        owner: updatedRepository.owner.login,
-        name: updatedRepository.name,
-        url: updatedRepository.html_url,
-        defaultBranch: updatedRepository.default_branch,
-      };
+      return toRepositoryMetadata(updatedRepository);
+    },
+    async updateRepositoryDefaultBranch({
+      owner,
+      name,
+      defaultBranch,
+    }: UpdateRepositoryDefaultBranchInput) {
+      const headers = await withInstallationHeaders();
+      const repository = await readJson<GitHubRepositoryResponse>(
+        await fetchImpl(
+          `https://api.github.com/repos/${githubPathSegment(owner)}/${githubPathSegment(name)}`,
+          {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ default_branch: defaultBranch }),
+          },
+        ),
+      );
+
+      return toRepositoryMetadata(repository);
     },
     async addRepositoryCollaborator({
       owner,

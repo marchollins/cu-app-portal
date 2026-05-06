@@ -11,6 +11,12 @@ type RepositoryMetadata = {
   defaultBranch: string;
 };
 
+type RepositoryImportStage =
+  | "create-target"
+  | "clone"
+  | "push"
+  | "set-default-branch";
+
 type GitExec = (
   command: string,
   args: string[],
@@ -32,11 +38,44 @@ type ImportRepositoryWithHistoryInput = {
       visibility: GitHubRepoVisibility;
       files: Record<string, string>;
       defaultBranch: string;
+      autoInit: false;
       reuseIfAlreadyExists: false;
     }) => Promise<RepositoryMetadata>;
+    updateRepositoryDefaultBranch: (input: {
+      owner: string;
+      name: string;
+      defaultBranch: string;
+    }) => Promise<RepositoryMetadata>;
+  };
+  sourceGithub?: {
+    createInstallationTokenForGit: () => Promise<string>;
   };
   exec?: GitExec;
 };
+
+export class RepositoryImportError extends Error {
+  readonly stage: RepositoryImportStage;
+  readonly targetRepository?: RepositoryMetadata;
+  readonly code?: "TARGET_REPOSITORY_ALREADY_EXISTS";
+
+  constructor({
+    message,
+    stage,
+    targetRepository,
+    code,
+  }: {
+    message: string;
+    stage: RepositoryImportStage;
+    targetRepository?: RepositoryMetadata;
+    code?: "TARGET_REPOSITORY_ALREADY_EXISTS";
+  }) {
+    super(message);
+    this.name = "RepositoryImportError";
+    this.stage = stage;
+    this.targetRepository = targetRepository;
+    this.code = code;
+  }
+}
 
 function defaultExec(
   command: string,
@@ -70,53 +109,128 @@ function createTokenRemote({
   return `https://x-access-token:${encodeURIComponent(token)}@github.com/${owner}/${name}.git`;
 }
 
+function createPublicRemote({ owner, name }: { owner: string; name: string }) {
+  return `https://github.com/${owner}/${name}.git`;
+}
+
+function isPossibleTargetCollision(error: unknown) {
+  return (
+    error instanceof Error &&
+    (("status" in error && error.status === 422) ||
+      /already exists|name already exists/i.test(error.message))
+  );
+}
+
+function toImportError({
+  error,
+  stage,
+  targetRepository,
+}: {
+  error: unknown;
+  stage: RepositoryImportStage;
+  targetRepository?: RepositoryMetadata;
+}) {
+  if (stage === "create-target" && isPossibleTargetCollision(error)) {
+    return new RepositoryImportError({
+      message: "Target repository already exists.",
+      stage,
+      code: "TARGET_REPOSITORY_ALREADY_EXISTS",
+    });
+  }
+
+  return new RepositoryImportError({
+    message:
+      stage === "set-default-branch"
+        ? "Repository import failed while setting the target default branch."
+        : "Repository import failed while mirroring git history.",
+    stage,
+    targetRepository,
+  });
+}
+
 export async function importRepositoryWithHistory({
   source,
   target,
   github,
+  sourceGithub,
   exec = defaultExec,
 }: ImportRepositoryWithHistoryInput) {
   const tempRoot = await mkdtemp(join(tmpdir(), "portal-repository-import-"));
+  let repository: RepositoryMetadata | undefined;
 
   try {
-    const repository = await github.createRepository({
-      owner: target.owner,
-      name: target.name,
-      visibility: target.visibility,
-      files: {},
-      defaultBranch: "main",
-      reuseIfAlreadyExists: false,
-    });
-    const token = await github.createInstallationTokenForGit();
+    try {
+      repository = await github.createRepository({
+        owner: target.owner,
+        name: target.name,
+        visibility: target.visibility,
+        files: {},
+        defaultBranch: source.defaultBranch,
+        autoInit: false,
+        reuseIfAlreadyExists: false,
+      });
+    } catch (error) {
+      throw toImportError({ error, stage: "create-target" });
+    }
+
+    const targetToken = await github.createInstallationTokenForGit();
+    const sourceToken = sourceGithub
+      ? await sourceGithub.createInstallationTokenForGit()
+      : null;
     const mirrorDir = join(tempRoot, "source.git");
 
-    await exec(
-      "git",
-      [
-        "clone",
-        "--mirror",
-        createTokenRemote({ owner: source.owner, name: source.name, token }),
-        mirrorDir,
-      ],
-      { cwd: tempRoot, stdio: "ignore" },
-    );
-    await exec(
-      "git",
-      [
-        "push",
-        "--mirror",
-        createTokenRemote({
-          owner: repository.owner,
-          name: repository.name,
-          token,
-        }),
-      ],
-      { cwd: mirrorDir, stdio: "ignore" },
-    );
+    try {
+      await exec(
+        "git",
+        [
+          "clone",
+          "--mirror",
+          sourceToken
+            ? createTokenRemote({
+                owner: source.owner,
+                name: source.name,
+                token: sourceToken,
+              })
+            : createPublicRemote({ owner: source.owner, name: source.name }),
+          mirrorDir,
+        ],
+        { cwd: tempRoot, stdio: "ignore" },
+      );
+    } catch (error) {
+      throw toImportError({ error, stage: "clone", targetRepository: repository });
+    }
 
-    return repository;
-  } catch {
-    throw new Error("Repository import failed while mirroring git history.");
+    try {
+      await exec(
+        "git",
+        [
+          "push",
+          "--mirror",
+          createTokenRemote({
+            owner: repository.owner,
+            name: repository.name,
+            token: targetToken,
+          }),
+        ],
+        { cwd: mirrorDir, stdio: "ignore" },
+      );
+    } catch (error) {
+      throw toImportError({ error, stage: "push", targetRepository: repository });
+    }
+
+    try {
+      return await github.updateRepositoryDefaultBranch({
+        owner: repository.owner,
+        name: repository.name,
+        defaultBranch: source.defaultBranch,
+      });
+    } catch (error) {
+      throw toImportError({
+        error,
+        stage: "set-default-branch",
+        targetRepository: repository,
+      });
+    }
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

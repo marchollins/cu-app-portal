@@ -34,6 +34,99 @@ describe("createGitHubAppClient", () => {
     );
   });
 
+  it("creates empty repositories without initializing a default branch", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          html_url: "https://github.com/cedarville-it/campus-dashboard",
+          default_branch: "main",
+          name: "campus-dashboard",
+          owner: { login: "cedarville-it" },
+        }),
+      );
+
+    const client = createGitHubAppClient({
+      appId: "12345",
+      privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      installationId: "111",
+      fetchImpl,
+    });
+
+    await expect(
+      client.createRepository({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        visibility: "private",
+        files: {},
+        defaultBranch: "trunk",
+        autoInit: false,
+      }),
+    ).resolves.toEqual({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      url: "https://github.com/cedarville-it/campus-dashboard",
+      defaultBranch: "main",
+    });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://api.github.com/orgs/cedarville-it/repos",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "campus-dashboard",
+          visibility: "private",
+          auto_init: false,
+        }),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("updates repository default branches after a mirror import", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          html_url: "https://github.com/cedarville-it/campus-dashboard",
+          default_branch: "trunk",
+          name: "campus-dashboard",
+          owner: { login: "cedarville-it" },
+        }),
+      );
+
+    const client = createGitHubAppClient({
+      appId: "12345",
+      privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      installationId: "111",
+      fetchImpl,
+    });
+
+    await expect(
+      client.updateRepositoryDefaultBranch({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        defaultBranch: "trunk",
+      }),
+    ).resolves.toEqual({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      url: "https://github.com/cedarville-it/campus-dashboard",
+      defaultBranch: "trunk",
+    });
+    expect(fetchImpl).toHaveBeenLastCalledWith(
+      "https://api.github.com/repos/cedarville-it/campus-dashboard",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ default_branch: "trunk" }),
+      }),
+    );
+  });
+
   it("sets an actions secret using the repository public key", async () => {
     await sodium.ready;
     const { publicKey } = sodium.crypto_box_keypair();
