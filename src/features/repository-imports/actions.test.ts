@@ -4,7 +4,12 @@ import { loadGitHubAppConfig } from "@/features/repositories/config";
 import { createGitHubAppClient } from "@/features/repositories/github-app";
 import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
-import { addExistingAppAction, prepareExistingAppAction } from "./actions";
+import {
+  addExistingAppAction,
+  prepareExistingAppAction,
+  verifyExistingAppPreparationAction,
+} from "./actions";
+import { PUBLISHING_BUNDLE_PATHS } from "./compatibility";
 import { prepareImportedRepository } from "./prepare-repository";
 
 vi.mock("next/cache", () => ({
@@ -357,6 +362,88 @@ describe("repository import actions", () => {
         owner: "Cedarville-IT",
         github: expect.any(Object),
       }),
+    );
+  });
+
+  it("marks opened preparation PRs committed when publishing files reach the default branch", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_verify",
+      userId: "user-123",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      repositoryImport: {
+        id: "import_verify",
+        preparationStatus: "PULL_REQUEST_OPENED",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    const github = {
+      readRepositoryTextFiles: vi.fn().mockResolvedValue({
+        "package.json": "{}",
+        ...Object.fromEntries(
+          PUBLISHING_BUNDLE_PATHS.map((path) => [path, "content"]),
+        ),
+      }),
+    };
+
+    await verifyExistingAppPreparationAction("req_verify", { github });
+
+    expect(github.readRepositoryTextFiles).toHaveBeenCalledWith({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      ref: "main",
+      paths: ["package.json", ...PUBLISHING_BUNDLE_PATHS],
+    });
+    expect(prisma.repositoryImport.update).toHaveBeenCalledWith({
+      where: { id: "import_verify" },
+      data: {
+        preparationStatus: "COMMITTED",
+        preparationErrorSummary: null,
+      },
+    });
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      "REPOSITORY_PREPARATION_VERIFIED",
+      {
+        requestId: "req_verify",
+        targetRepository: "cedarville-it/campus-dashboard",
+      },
+    );
+  });
+
+  it("keeps preparation in PR-opened state when publishing files are still missing", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_missing",
+      userId: "user-123",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      repositoryImport: {
+        id: "import_missing",
+        preparationStatus: "PULL_REQUEST_OPENED",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    const [missingPath, ...presentPaths] = PUBLISHING_BUNDLE_PATHS;
+    const github = {
+      readRepositoryTextFiles: vi.fn().mockResolvedValue({
+        "package.json": "{}",
+        ...Object.fromEntries(presentPaths.map((path) => [path, "content"])),
+      }),
+    };
+
+    await verifyExistingAppPreparationAction("req_missing", { github });
+
+    expect(prisma.repositoryImport.update).toHaveBeenCalledWith({
+      where: { id: "import_missing" },
+      data: {
+        preparationStatus: "PULL_REQUEST_OPENED",
+        preparationErrorSummary: `Missing publishing files on default branch: ${missingPath}`,
+      },
+    });
+    expect(recordAuditEvent).not.toHaveBeenCalledWith(
+      "REPOSITORY_PREPARATION_VERIFIED",
+      expect.anything(),
     );
   });
 });

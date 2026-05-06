@@ -13,7 +13,10 @@ import {
 } from "@/features/repositories/actions";
 import { buildCodexHandoffPrompt } from "@/features/repositories/codex-handoff";
 import { CopyCodexHandoffButton } from "@/features/repositories/copy-codex-handoff-button";
-import { prepareExistingAppAction } from "@/features/repository-imports/actions";
+import {
+  prepareExistingAppAction,
+  verifyExistingAppPreparationAction,
+} from "@/features/repository-imports/actions";
 import { prisma } from "@/lib/db";
 
 const PREPARATION_REQUIRED_MESSAGE =
@@ -153,6 +156,11 @@ function renderImportedRepositoryStatus(request: {
   }
 
   const prepareAction = prepareExistingAppAction.bind(null, request.id);
+  const verifyAction = verifyExistingAppPreparationAction.bind(
+    null,
+    request.id,
+    undefined,
+  );
 
   return (
     <section aria-label="Imported repository status">
@@ -193,6 +201,11 @@ function renderImportedRepositoryStatus(request: {
             <button type="submit">Open Azure Publishing PR</button>
           </form>
         </>
+      ) : null}
+      {repositoryImport.preparationStatus === "PULL_REQUEST_OPENED" ? (
+        <form action={verifyAction}>
+          <button type="submit">Verify PR Merge</button>
+        </form>
       ) : null}
     </section>
   );

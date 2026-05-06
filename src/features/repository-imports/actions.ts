@@ -9,6 +9,7 @@ import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { createSupportReference } from "@/lib/support-reference";
 import { prepareImportedRepository } from "./prepare-repository";
+import { verifyImportedPublishReadiness } from "./publish-readiness";
 import { parseGitHubRepositoryUrl } from "./repo-url";
 import { isRepositoryInOrg } from "./target-name";
 
@@ -32,6 +33,10 @@ type AddExistingAppDeps = {
 
 type PrepareExistingAppDeps = {
   github?: Parameters<typeof prepareImportedRepository>[0]["github"];
+};
+
+type VerifyExistingAppPreparationDeps = {
+  github?: Parameters<typeof verifyImportedPublishReadiness>[0]["github"];
 };
 
 type RepositoryImportWriteClient = Pick<
@@ -272,6 +277,62 @@ export async function prepareExistingAppAction(
 
     throw error;
   }
+
+  revalidatePath("/apps");
+}
+
+export async function verifyExistingAppPreparationAction(
+  requestId: string,
+  deps: VerifyExistingAppPreparationDeps = {},
+) {
+  const userId = await resolveCurrentUserId();
+  const appRequest = await prisma.appRequest.findFirst({
+    where: { id: requestId, userId },
+    include: { repositoryImport: true },
+  });
+
+  if (
+    !appRequest?.repositoryOwner ||
+    !appRequest.repositoryName ||
+    !appRequest.repositoryDefaultBranch ||
+    !appRequest.repositoryImport
+  ) {
+    throw new Error("Imported app repository is not ready for verification.");
+  }
+
+  const readiness = await verifyImportedPublishReadiness({
+    owner: appRequest.repositoryOwner,
+    name: appRequest.repositoryName,
+    defaultBranch: appRequest.repositoryDefaultBranch,
+    github:
+      deps.github ?? createDefaultPreparationGitHubClient(appRequest.repositoryOwner),
+  });
+
+  if (!readiness.ready) {
+    await prisma.repositoryImport.update({
+      where: { id: appRequest.repositoryImport.id },
+      data: {
+        preparationStatus: "PULL_REQUEST_OPENED",
+        preparationErrorSummary: `Missing publishing files on default branch: ${readiness.missingPaths.join(", ")}`,
+      },
+    });
+
+    revalidatePath("/apps");
+    return;
+  }
+
+  await prisma.repositoryImport.update({
+    where: { id: appRequest.repositoryImport.id },
+    data: {
+      preparationStatus: "COMMITTED",
+      preparationErrorSummary: null,
+    },
+  });
+
+  await recordAuditEvent("REPOSITORY_PREPARATION_VERIFIED", {
+    requestId,
+    targetRepository: `${appRequest.repositoryOwner}/${appRequest.repositoryName}`,
+  });
 
   revalidatePath("/apps");
 }

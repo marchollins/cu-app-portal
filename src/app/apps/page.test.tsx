@@ -22,6 +22,7 @@ vi.mock("@/features/repositories/actions", () => ({
 
 vi.mock("@/features/repository-imports/actions", () => ({
   prepareExistingAppAction: vi.fn(),
+  verifyExistingAppPreparationAction: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -333,6 +334,55 @@ describe("MyAppsPage", () => {
       screen.queryByText(
         /azure publishing unavailable until repository preparation is committed/i,
       ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a verification action for imported apps with opened preparation PRs", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
+      {
+        id: "req_import_pr",
+        appName: "Campus Dashboard",
+        generationStatus: "SUCCEEDED",
+        sourceOfTruth: "IMPORTED_REPOSITORY",
+        repositoryStatus: "READY",
+        repositoryAccessStatus: "GRANTED",
+        repositoryAccessNote: null,
+        publishStatus: "NOT_STARTED",
+        repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
+        publishUrl: null,
+        primaryPublishUrl: null,
+        azureWebAppName: null,
+        azureDatabaseName: null,
+        repositoryImport: {
+          sourceRepositoryUrl: "https://github.com/cedarville-it/source-dashboard",
+          importStatus: "SUCCEEDED",
+          compatibilityStatus: "NEEDS_ADDITIONS",
+          preparationStatus: "PULL_REQUEST_OPENED",
+          preparationPullRequestUrl:
+            "https://github.com/cedarville-it/campus-dashboard/pull/42",
+        },
+        publishAttempts: [],
+      },
+    ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(await MyAppsPage());
+
+    expect(
+      screen.getByRole("button", { name: /verify pr merge/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: /commit azure publishing additions/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /open azure publishing pr/i }),
     ).not.toBeInTheDocument();
   });
 
