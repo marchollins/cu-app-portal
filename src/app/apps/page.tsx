@@ -15,7 +15,31 @@ import { buildCodexHandoffPrompt } from "@/features/repositories/codex-handoff";
 import { CopyCodexHandoffButton } from "@/features/repositories/copy-codex-handoff-button";
 import { prisma } from "@/lib/db";
 
-function renderAction(requestId: string, repositoryStatus: string, publishStatus: string) {
+const PREPARATION_REQUIRED_MESSAGE =
+  "Azure publishing unavailable until repository preparation is committed.";
+
+function isImportedRepositoryPrepared(
+  sourceOfTruth: string,
+  preparationStatus: string | null | undefined,
+) {
+  return (
+    sourceOfTruth !== "IMPORTED_REPOSITORY" || preparationStatus === "COMMITTED"
+  );
+}
+
+function renderAction({
+  requestId,
+  repositoryStatus,
+  publishStatus,
+  sourceOfTruth,
+  preparationStatus,
+}: {
+  requestId: string;
+  repositoryStatus: string;
+  publishStatus: string;
+  sourceOfTruth: string;
+  preparationStatus: string | null | undefined;
+}) {
   if (repositoryStatus === "DELETED") {
     return <span>The managed repo has been deleted.</span>;
   }
@@ -32,6 +56,10 @@ function renderAction(requestId: string, repositoryStatus: string, publishStatus
 
   if (repositoryStatus !== "READY") {
     return <span>Portal publish unavailable until the managed repo is ready.</span>;
+  }
+
+  if (!isImportedRepositoryPrepared(sourceOfTruth, preparationStatus)) {
+    return <span>{PREPARATION_REQUIRED_MESSAGE}</span>;
   }
 
   if (publishStatus === "FAILED") {
@@ -190,6 +218,7 @@ export default async function MyAppsPage() {
         orderBy: { createdAt: "desc" },
         take: 1,
       },
+      repositoryImport: true,
     },
   });
   const currentUser = await prisma.user.findUnique({
@@ -287,11 +316,13 @@ export default async function MyAppsPage() {
               <p>
                 <Link href={`/download/${request.id}`}>Open app details</Link>
               </p>
-              {renderAction(
-                request.id,
-                request.repositoryStatus,
-                request.publishStatus,
-              )}
+              {renderAction({
+                requestId: request.id,
+                repositoryStatus: request.repositoryStatus,
+                publishStatus: request.publishStatus,
+                sourceOfTruth: request.sourceOfTruth,
+                preparationStatus: request.repositoryImport?.preparationStatus,
+              })}
               {renderDeletePanel({
                 id: request.id,
                 repositoryOwner: request.repositoryOwner,

@@ -162,7 +162,31 @@ function renderRepositoryAccessSection(
   );
 }
 
-function renderPublishAction(requestId: string, publishStatus: string, repositoryStatus: string) {
+const PREPARATION_REQUIRED_MESSAGE =
+  "Azure publishing unavailable until repository preparation is committed.";
+
+function isImportedRepositoryPrepared(
+  sourceOfTruth: string,
+  preparationStatus: string | null | undefined,
+) {
+  return (
+    sourceOfTruth !== "IMPORTED_REPOSITORY" || preparationStatus === "COMMITTED"
+  );
+}
+
+function renderPublishAction({
+  requestId,
+  publishStatus,
+  repositoryStatus,
+  sourceOfTruth,
+  preparationStatus,
+}: {
+  requestId: string;
+  publishStatus: string;
+  repositoryStatus: string;
+  sourceOfTruth: string;
+  preparationStatus: string | null | undefined;
+}) {
   if (repositoryStatus === "FAILED") {
     const retryAction = retryRepositoryBootstrapAction.bind(null, requestId);
 
@@ -179,6 +203,10 @@ function renderPublishAction(requestId: string, publishStatus: string, repositor
 
   if (repositoryStatus !== "READY") {
     return null;
+  }
+
+  if (!isImportedRepositoryPrepared(sourceOfTruth, preparationStatus)) {
+    return <p>{PREPARATION_REQUIRED_MESSAGE}</p>;
   }
 
   if (publishStatus === "FAILED") {
@@ -227,6 +255,7 @@ export default async function DownloadPage({
         orderBy: { createdAt: "desc" },
         take: 1,
       },
+      repositoryImport: true,
     },
   });
 
@@ -278,11 +307,13 @@ export default async function DownloadPage({
         appRequest.repositoryStatus,
         appRequest.publishErrorSummary,
       )}
-      {renderPublishAction(
+      {renderPublishAction({
         requestId,
-        appRequest.publishStatus,
-        appRequest.repositoryStatus,
-      )}
+        publishStatus: appRequest.publishStatus,
+        repositoryStatus: appRequest.repositoryStatus,
+        sourceOfTruth: appRequest.sourceOfTruth,
+        preparationStatus: appRequest.repositoryImport?.preparationStatus,
+      })}
       <p>
         Need to revisit this later? Go to <Link href="/apps">My Apps</Link>.
       </p>
