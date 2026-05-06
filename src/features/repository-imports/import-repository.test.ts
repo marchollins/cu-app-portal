@@ -174,11 +174,17 @@ describe("importRepositoryWithHistory", () => {
     );
   });
 
-  it("cleans up and preserves created target metadata when mirroring fails", async () => {
+  it("reports source clone failures with sanitized git details", async () => {
     const tempRoot = join(tmpdir(), "portal-import-failure");
     const exec = vi.fn().mockRejectedValue(
-      new Error(
-        "git failed for https://x-access-token:installation-token@github.com/external-org/Campus-Dashboard.git",
+      Object.assign(
+        new Error(
+          "git failed for https://x-access-token:installation-token@github.com/external-org/Campus-Dashboard.git",
+        ),
+        {
+          stderr:
+            "fatal: repository 'https://x-access-token:installation-token@github.com/external-org/Campus-Dashboard.git/' not found\n",
+        },
       ),
     );
     const github = {
@@ -211,7 +217,8 @@ describe("importRepositoryWithHistory", () => {
 
     expect(failure).toBeInstanceOf(RepositoryImportError);
     expect(failure).toMatchObject({
-      message: "Repository import failed while mirroring git history.",
+      message:
+        "Repository import failed while cloning source repository: fatal: repository 'https://github.com/external-org/Campus-Dashboard.git/' not found",
       stage: "clone",
       targetRepository: {
         owner: "cedarville-it",
@@ -221,6 +228,56 @@ describe("importRepositoryWithHistory", () => {
       },
     });
     expect(String(failure.stack)).not.toContain("installation-token");
+    expect(failure.message).not.toContain("installation-token");
+    expect(rm).toHaveBeenCalledWith(tempRoot, { recursive: true, force: true });
+  });
+
+  it("reports target push failures with sanitized git details", async () => {
+    const tempRoot = join(tmpdir(), "portal-import-push-failure");
+    const exec = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(
+        Object.assign(new Error("git push failed"), {
+          stderr:
+            "remote: Permission to cedarville-it/campus-dashboard.git denied to x-access-token.\nfatal: unable to access 'https://x-access-token:target-token@github.com/cedarville-it/campus-dashboard.git/': The requested URL returned error: 403\n",
+        }),
+      );
+    const github = {
+      createInstallationTokenForGit: vi.fn().mockResolvedValue("target-token"),
+      createRepository: vi.fn().mockResolvedValue({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        url: "https://github.com/cedarville-it/campus-dashboard",
+        defaultBranch: "main",
+      }),
+      updateRepositoryDefaultBranch: vi.fn(),
+    };
+    vi.mocked(mkdtemp).mockResolvedValue(tempRoot);
+
+    const failure = await importRepositoryWithHistory({
+      source: {
+        owner: "external-org",
+        name: "Campus-Dashboard",
+        url: "https://github.com/external-org/Campus-Dashboard",
+        defaultBranch: "trunk",
+      },
+      target: {
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        visibility: "private",
+      },
+      github,
+      exec,
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(RepositoryImportError);
+    expect(failure).toMatchObject({
+      message:
+        "Repository import failed while pushing history to target repository: remote: Permission to cedarville-it/campus-dashboard.git denied to x-access-token. fatal: unable to access 'https://github.com/cedarville-it/campus-dashboard.git/': The requested URL returned error: 403",
+      stage: "push",
+    });
+    expect(failure.message).not.toContain("target-token");
     expect(rm).toHaveBeenCalledWith(tempRoot, { recursive: true, force: true });
   });
 

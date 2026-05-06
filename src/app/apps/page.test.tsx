@@ -174,6 +174,51 @@ describe("MyAppsPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows import failure details for blocked imported apps", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
+      {
+        id: "req_import_failed",
+        appName: "External Dashboard",
+        generationStatus: "SUCCEEDED",
+        sourceOfTruth: "IMPORTED_REPOSITORY",
+        repositoryStatus: "FAILED",
+        repositoryAccessStatus: "NOT_REQUESTED",
+        repositoryAccessNote: null,
+        publishStatus: "NOT_STARTED",
+        repositoryUrl: null,
+        repositoryOwner: "cedarville-it",
+        repositoryName: "external-dashboard",
+        publishUrl: null,
+        primaryPublishUrl: null,
+        azureWebAppName: null,
+        azureDatabaseName: null,
+        repositoryImport: {
+          sourceRepositoryUrl: "https://github.com/example/external-dashboard",
+          importStatus: "FAILED",
+          importErrorSummary:
+            "Repository import failed while cloning source repository: fatal: repository not found",
+          compatibilityStatus: "NOT_SCANNED",
+          preparationStatus: "BLOCKED",
+        },
+        publishAttempts: [],
+      },
+    ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(await MyAppsPage());
+
+    expect(screen.getByText("Import: failed")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Import error: Repository import failed while cloning source repository: fatal: repository not found",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Preparation: blocked")).toBeInTheDocument();
+  });
+
   it("shows imported repository status and preparation choices", async () => {
     vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findMany).mockResolvedValue([

@@ -144,6 +144,7 @@ function renderImportedRepositoryStatus(request: {
   repositoryImport: {
     sourceRepositoryUrl: string;
     importStatus: string;
+    importErrorSummary?: string | null;
     compatibilityStatus: string;
     preparationStatus: string;
     preparationPullRequestUrl?: string | null;
@@ -168,6 +169,9 @@ function renderImportedRepositoryStatus(request: {
       <h3>Imported repository status</h3>
       <p>Source repo: {repositoryImport.sourceRepositoryUrl}</p>
       <p>Import: {formatStatus(repositoryImport.importStatus)}</p>
+      {repositoryImport.importErrorSummary ? (
+        <p>Import error: {repositoryImport.importErrorSummary}</p>
+      ) : null}
       <p>
         Compatibility: {formatStatus(repositoryImport.compatibilityStatus)}
       </p>

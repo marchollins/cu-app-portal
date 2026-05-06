@@ -79,13 +79,40 @@ export class RepositoryImportError extends Error {
   }
 }
 
+class GitCommandError extends Error {
+  readonly stderr: string;
+
+  constructor({
+    command,
+    code,
+    stderr,
+  }: {
+    command: string;
+    code: number | null;
+    stderr: string;
+  }) {
+    super(`${command} exited with code ${code ?? "unknown"}.`);
+    this.name = "GitCommandError";
+    this.stderr = stderr;
+  }
+}
+
 function defaultExec(
   command: string,
   args: string[],
   options: { cwd: string; stdio: "ignore" },
 ) {
   return new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, options);
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
 
     child.on("error", reject);
     child.on("close", (code) => {
@@ -94,7 +121,7 @@ function defaultExec(
         return;
       }
 
-      reject(new Error(`${command} exited with code ${code ?? "unknown"}.`));
+      reject(new GitCommandError({ command, code, stderr }));
     });
   });
 }
@@ -169,6 +196,20 @@ function summarizeImportError({
   error: unknown;
   stage: RepositoryImportStage;
 }) {
+  if (stage === "clone") {
+    return appendGitErrorDetail(
+      "Repository import failed while cloning source repository",
+      error,
+    );
+  }
+
+  if (stage === "push") {
+    return appendGitErrorDetail(
+      "Repository import failed while pushing history to target repository",
+      error,
+    );
+  }
+
   if (stage === "create-target" && isTargetCreationValidationError(error)) {
     return "Repository import failed while creating the target repository.";
   }
@@ -182,6 +223,48 @@ function summarizeImportError({
   }
 
   return "Repository import failed while mirroring git history.";
+}
+
+function appendGitErrorDetail(message: string, error: unknown) {
+  const detail = summarizeGitErrorDetail(error);
+
+  return detail ? `${message}: ${detail}` : `${message}.`;
+}
+
+function summarizeGitErrorDetail(error: unknown) {
+  const rawDetail = getGitErrorText(error);
+
+  if (!rawDetail) {
+    return null;
+  }
+
+  return sanitizeGitErrorDetail(rawDetail).slice(0, 600);
+}
+
+function getGitErrorText(error: unknown) {
+  if (
+    error &&
+    typeof error === "object" &&
+    "stderr" in error &&
+    typeof error.stderr === "string" &&
+    error.stderr.trim()
+  ) {
+    return error.stderr;
+  }
+
+  return error instanceof Error && error.message.trim() ? error.message : null;
+}
+
+function sanitizeGitErrorDetail(value: string) {
+  return value
+    .replaceAll(
+      /https:\/\/x-access-token:[^@\s'"]+@github\.com\/([^\s'"]+)/g,
+      "https://github.com/$1",
+    )
+    .replaceAll(/x-access-token:[^@\s'"]+/g, "x-access-token:[redacted]")
+    .replaceAll(/\s+/g, " ")
+    .trim()
+    .replaceAll(/\.$/g, "");
 }
 
 function toImportError({
