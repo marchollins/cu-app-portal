@@ -11,6 +11,10 @@ import {
   retryRepositoryBootstrapAction,
   saveGitHubUsernameAndGrantAccessAction,
 } from "@/features/repositories/actions";
+import {
+  prepareExistingAppAction,
+  verifyExistingAppPreparationAction,
+} from "@/features/repository-imports/actions";
 import { PendingSubmitButton } from "@/features/forms/pending-submit-button";
 import { buildCodexHandoffPrompt } from "@/features/repositories/codex-handoff";
 import { CopyCodexHandoffButton } from "@/features/repositories/copy-codex-handoff-button";
@@ -172,6 +176,96 @@ function renderRepositoryAccessSection(
 const PREPARATION_REQUIRED_MESSAGE =
   "Azure publishing unavailable until repository preparation is committed.";
 
+function formatStatus(status: string) {
+  return status.toLowerCase().replaceAll("_", " ");
+}
+
+function renderImportedRepositoryStatus({
+  requestId,
+  repositoryImport,
+}: {
+  requestId: string;
+  repositoryImport: {
+    sourceRepositoryUrl?: string | null;
+    importStatus?: string | null;
+    importErrorSummary?: string | null;
+    compatibilityStatus?: string | null;
+    preparationStatus?: string | null;
+    preparationPullRequestUrl?: string | null;
+    preparationErrorSummary?: string | null;
+  } | null;
+}) {
+  if (!repositoryImport) {
+    return null;
+  }
+
+  const prepareAction = prepareExistingAppAction.bind(null, requestId);
+  const verifyAction = verifyExistingAppPreparationAction.bind(
+    null,
+    requestId,
+    undefined,
+  );
+
+  return (
+    <section aria-label="Imported repository status">
+      <h2>Imported repository status</h2>
+      {repositoryImport.sourceRepositoryUrl ? (
+        <p>Source repo: {repositoryImport.sourceRepositoryUrl}</p>
+      ) : null}
+      {repositoryImport.importStatus ? (
+        <p>Import: {formatStatus(repositoryImport.importStatus)}</p>
+      ) : null}
+      {repositoryImport.importErrorSummary ? (
+        <p>Import error: {repositoryImport.importErrorSummary}</p>
+      ) : null}
+      {repositoryImport.compatibilityStatus ? (
+        <p>
+          Compatibility: {formatStatus(repositoryImport.compatibilityStatus)}
+        </p>
+      ) : null}
+      {repositoryImport.preparationStatus ? (
+        <p>Preparation: {formatStatus(repositoryImport.preparationStatus)}</p>
+      ) : null}
+      {repositoryImport.preparationPullRequestUrl ? (
+        <p>
+          Preparation PR:{" "}
+          <a href={repositoryImport.preparationPullRequestUrl}>
+            {repositoryImport.preparationPullRequestUrl}
+          </a>
+        </p>
+      ) : null}
+      {repositoryImport.preparationErrorSummary ? (
+        <p>Preparation error: {repositoryImport.preparationErrorSummary}</p>
+      ) : null}
+      {repositoryImport.preparationStatus === "PENDING_USER_CHOICE" ? (
+        <>
+          <form action={prepareAction}>
+            <input
+              name="preparationMode"
+              type="hidden"
+              value="DIRECT_COMMIT"
+            />
+            <button type="submit">Commit Azure Publishing Additions</button>
+          </form>
+          <form action={prepareAction}>
+            <input
+              name="preparationMode"
+              type="hidden"
+              value="PULL_REQUEST"
+            />
+            <button type="submit">Open Azure Publishing PR</button>
+          </form>
+        </>
+      ) : null}
+      {repositoryImport.preparationStatus === "PULL_REQUEST_OPENED" ? (
+        <form action={verifyAction}>
+          <button type="submit">Verify PR Merge</button>
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
 function isImportedRepositoryPrepared(
   sourceOfTruth: string,
   preparationStatus: string | null | undefined,
@@ -313,6 +407,12 @@ export default async function DownloadPage({
         appRequest.repositoryAccessNote,
         currentUser?.githubUsername ?? null,
       )}
+      {isImportedApp
+        ? renderImportedRepositoryStatus({
+            requestId,
+            repositoryImport: appRequest.repositoryImport,
+          })
+        : null}
       <ol>
         <li>Open the managed repo locally in Codex on your machine.</li>
         <li>Let Codex clone, customize, commit, and push your changes.</li>

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DownloadPage from "./page";
 
@@ -29,6 +29,11 @@ vi.mock("@/features/publishing/actions", () => ({
 vi.mock("@/features/repositories/actions", () => ({
   retryRepositoryBootstrapAction: vi.fn(),
   saveGitHubUsernameAndGrantAccessAction: vi.fn(),
+}));
+
+vi.mock("@/features/repository-imports/actions", () => ({
+  prepareExistingAppAction: vi.fn(),
+  verifyExistingAppPreparationAction: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -135,6 +140,9 @@ describe("DownloadPage", () => {
       azureWebAppName: null,
       publishErrorSummary: null,
       repositoryImport: {
+        sourceRepositoryUrl: "https://github.com/example/campus-dashboard",
+        importStatus: "SUCCEEDED",
+        compatibilityStatus: "NEEDS_ADDITIONS",
         preparationStatus: "PENDING_USER_CHOICE",
       },
       artifact: {
@@ -204,11 +212,26 @@ describe("DownloadPage", () => {
         name: "https://github.com/cedarville-it/campus-dashboard",
       }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /download zip/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /download zip/i }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(
         /azure publishing unavailable until repository preparation is committed/i,
       ),
+    ).toBeInTheDocument();
+    const importedStatus = screen.getByRole("region", {
+      name: /imported repository status/i,
+    });
+    expect(
+      within(importedStatus).getByRole("button", {
+        name: /commit azure publishing additions/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(importedStatus).getByRole("button", {
+        name: /open azure publishing pr/i,
+      }),
     ).toBeInTheDocument();
   });
 
