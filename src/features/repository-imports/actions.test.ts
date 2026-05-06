@@ -421,6 +421,71 @@ describe("repository import actions", () => {
     });
   });
 
+  it("creates blocked support history when all target import names collide", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.template.upsert).mockResolvedValue({
+      id: "template-imported",
+    } as Awaited<ReturnType<typeof prisma.template.upsert>>);
+    vi.mocked(prisma.appRequest.create).mockResolvedValue({
+      id: "req_collision_exhausted",
+      supportReference: "SUP-123",
+    } as Awaited<ReturnType<typeof prisma.appRequest.create>>);
+    vi.mocked(importRepositoryWithHistory).mockRejectedValue(
+      Object.assign(new Error("Target repository already exists."), {
+        name: "RepositoryImportError",
+        stage: "create-target",
+        code: "TARGET_REPOSITORY_ALREADY_EXISTS",
+      }),
+    );
+
+    const formData = new FormData();
+    formData.set("repositoryUrl", "https://github.com/external-org/Campus-Dashboard");
+    formData.set("appName", "Campus Dashboard");
+
+    await expect(
+      addExistingAppAction(formData, {
+        defaultOrg: "cedarville-it",
+        repository: {
+          owner: "external-org",
+          name: "Campus-Dashboard",
+          url: "https://github.com/external-org/Campus-Dashboard",
+          defaultBranch: "main",
+        },
+      }),
+    ).resolves.toEqual({ requestId: "req_collision_exhausted" });
+
+    expect(importRepositoryWithHistory).toHaveBeenCalledTimes(99);
+    expect(importRepositoryWithHistory).toHaveBeenNthCalledWith(
+      99,
+      expect.objectContaining({
+        target: expect.objectContaining({ name: "campus-dashboard-99" }),
+      }),
+    );
+    expect(prisma.appRequest.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard-99",
+        repositoryUrl: null,
+        repositoryDefaultBranch: null,
+        repositoryStatus: "FAILED",
+        publishErrorSummary:
+          'Could not choose an available target repository name for "Campus-Dashboard".',
+      }),
+    });
+    expect(prisma.repositoryImport.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        targetRepositoryOwner: "cedarville-it",
+        targetRepositoryName: "campus-dashboard-99",
+        targetRepositoryUrl: null,
+        targetRepositoryDefaultBranch: null,
+        importStatus: "FAILED",
+        importErrorSummary:
+          'Could not choose an available target repository name for "Campus-Dashboard".',
+        preparationStatus: "BLOCKED",
+      }),
+    });
+  });
+
   it("keeps support history when external repository import fails", async () => {
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
     vi.mocked(prisma.template.upsert).mockResolvedValue({

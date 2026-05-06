@@ -278,6 +278,8 @@ export async function addExistingAppAction(
   if (!isSharedOrgRepo) {
     const targetGithub = createGitHubClientForOwner(defaultOrg, githubConfig);
     const existingNames: string[] = [];
+    let importSucceeded = false;
+
     try {
       for (let attempt = 0; attempt < 99; attempt += 1) {
         targetName = buildSharedOrgTargetName({
@@ -296,6 +298,7 @@ export async function addExistingAppAction(
             sourceGithub,
             github: targetGithub,
           });
+          importSucceeded = true;
           break;
         } catch (error) {
           if (isTargetNameCollision(error)) {
@@ -305,6 +308,12 @@ export async function addExistingAppAction(
 
           throw error;
         }
+      }
+
+      if (!importSucceeded) {
+        throw new Error(
+          `Could not choose an available target repository name for "${repository.name}".`,
+        );
       }
     } catch (error) {
       const message = summarizeError(error);
