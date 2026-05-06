@@ -66,6 +66,9 @@ describe("AddExistingAppPage", () => {
 
   it("renders breadcrumb navigation and the repository analysis form", async () => {
     vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(addExistingAppAction).mockResolvedValue({
+      requestId: "req_imported_app",
+    });
 
     const page = await AddExistingAppPage();
     render(page);
@@ -113,8 +116,10 @@ describe("AddExistingAppPage", () => {
     formData.set("appName", "Campus Dashboard");
     formData.set("description", "Tracks campus metrics.");
 
-    await expect(formAction(formData)).rejects.toThrow("redirect:/apps");
+    await expect(formAction(formData)).rejects.toThrow(
+      "redirect:/download/req_imported_app",
+    );
     expect(addExistingAppAction).toHaveBeenCalledWith(formData);
-    expect(mockRedirect).toHaveBeenCalledWith("/apps");
+    expect(mockRedirect).toHaveBeenCalledWith("/download/req_imported_app");
   });
 });

@@ -7,8 +7,8 @@ import { addExistingAppAction } from "@/features/repository-imports/actions";
 async function submitExistingAppAction(formData: FormData) {
   "use server";
 
-  await addExistingAppAction(formData);
-  redirect("/apps");
+  const result = await addExistingAppAction(formData);
+  redirect(`/download/${result.requestId}`);
 }
 
 export default async function AddExistingAppPage() {
