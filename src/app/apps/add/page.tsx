@@ -4,9 +4,12 @@ import { redirect } from "next/navigation";
 import { getCurrentUserIdOrNull } from "@/features/app-requests/current-user";
 import { addExistingAppAction } from "@/features/repository-imports/actions";
 
-type FormAction = (formData: FormData) => void | Promise<void>;
+async function submitExistingAppAction(formData: FormData) {
+  "use server";
 
-const addExistingAppFormAction = addExistingAppAction as unknown as FormAction;
+  await addExistingAppAction(formData);
+  redirect("/apps");
+}
 
 export default async function AddExistingAppPage() {
   const userId = await getCurrentUserIdOrNull();
@@ -25,7 +28,7 @@ export default async function AddExistingAppPage() {
         <span aria-current="page">Add Existing App</span>
       </nav>
       <h1>Add Existing App</h1>
-      <form action={addExistingAppFormAction}>
+      <form action={submitExistingAppAction}>
         <label>
           GitHub Repository URL
           <input

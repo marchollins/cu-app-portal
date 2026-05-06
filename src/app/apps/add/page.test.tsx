@@ -105,8 +105,16 @@ describe("AddExistingAppPage", () => {
       screen.getByRole("button", { name: /analyze repository/i }),
     ).toHaveAttribute("type", "submit");
 
-    expect(findElementByType(page, "form")?.props.action).toBe(
-      addExistingAppAction,
-    );
+    const formAction = findElementByType(page, "form")?.props.action as (
+      formData: FormData,
+    ) => Promise<void>;
+    const formData = new FormData();
+    formData.set("repositoryUrl", "https://github.com/owner/repo");
+    formData.set("appName", "Campus Dashboard");
+    formData.set("description", "Tracks campus metrics.");
+
+    await expect(formAction(formData)).rejects.toThrow("redirect:/apps");
+    expect(addExistingAppAction).toHaveBeenCalledWith(formData);
+    expect(mockRedirect).toHaveBeenCalledWith("/apps");
   });
 });
