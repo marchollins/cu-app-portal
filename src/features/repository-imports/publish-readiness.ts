@@ -1,4 +1,8 @@
-import { PUBLISHING_BUNDLE_PATHS } from "./compatibility";
+import {
+  PUBLISHING_BUNDLE_PATHS,
+  scanRepositoryCompatibility,
+  type RepositoryFileMap,
+} from "./compatibility";
 
 type GitHubReadinessClient = {
   readRepositoryTextFiles(input: {
@@ -16,7 +20,40 @@ type VerifyImportedPublishReadinessInput = {
   github: GitHubReadinessClient;
 };
 
-const READINESS_PATHS = ["package.json", ...PUBLISHING_BUNDLE_PATHS];
+const READINESS_PATHS = [
+  "package.json",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "bun.lock",
+  "bun.lockb",
+  "pnpm-workspace.yaml",
+  "turbo.json",
+  "lerna.json",
+  "nx.json",
+  ...PUBLISHING_BUNDLE_PATHS,
+];
+const REQUIRED_READINESS_PATHS = ["package.json", ...PUBLISHING_BUNDLE_PATHS];
+
+function removePublishingBundlePaths(files: RepositoryFileMap) {
+  const compatibilityFiles = { ...files };
+
+  for (const path of PUBLISHING_BUNDLE_PATHS) {
+    delete compatibilityFiles[path];
+  }
+
+  return compatibilityFiles;
+}
+
+function formatFinding({
+  path,
+  message,
+}: {
+  path?: string;
+  message: string;
+}) {
+  return path ? `${path}: ${message}` : message;
+}
 
 export async function verifyImportedPublishReadiness({
   owner,
@@ -30,12 +67,19 @@ export async function verifyImportedPublishReadiness({
     ref: defaultBranch,
     paths: READINESS_PATHS,
   });
-  const missingPaths = READINESS_PATHS.filter(
+  const missingPaths = REQUIRED_READINESS_PATHS.filter(
     (path) => !Object.prototype.hasOwnProperty.call(files, path),
   );
+  const compatibility = scanRepositoryCompatibility(
+    removePublishingBundlePaths(files),
+  );
+  const packageIssues = compatibility.findings
+    .filter((finding) => finding.code !== "FILE_CONFLICT")
+    .map(formatFinding);
 
   return {
-    ready: missingPaths.length === 0,
+    ready: missingPaths.length === 0 && packageIssues.length === 0,
     missingPaths,
+    packageIssues,
   };
 }

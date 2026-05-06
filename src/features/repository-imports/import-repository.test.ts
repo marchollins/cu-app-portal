@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +16,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     ...actual,
     mkdtemp: vi.fn(),
     rm: vi.fn(),
+    writeFile: vi.fn(),
   };
 });
 
@@ -23,6 +24,7 @@ describe("importRepositoryWithHistory", () => {
   beforeEach(() => {
     vi.mocked(mkdtemp).mockReset();
     vi.mocked(rm).mockReset();
+    vi.mocked(writeFile).mockReset();
   });
 
   it("creates an empty target repository and mirrors public source history into it", async () => {
@@ -86,9 +88,11 @@ describe("importRepositoryWithHistory", () => {
       stdio: "ignore",
     });
     expect(exec).toHaveBeenNthCalledWith(2, "git", [
+      "-c",
+      `credential.helper=store --file=${join(tempRoot, "target-credentials")}`,
       "push",
       "--mirror",
-      "https://x-access-token:target-token@github.com/cedarville-it/campus-dashboard.git",
+      "https://github.com/cedarville-it/campus-dashboard.git",
     ], {
       cwd: join(tempRoot, "source.git"),
       stdio: "ignore",
@@ -142,22 +146,32 @@ describe("importRepositoryWithHistory", () => {
     });
 
     expect(exec).toHaveBeenNthCalledWith(1, "git", [
+      "-c",
+      `credential.helper=store --file=${join(tempRoot, "source-credentials")}`,
       "clone",
       "--mirror",
-      "https://x-access-token:source-token@github.com/external-org/Private-Dashboard.git",
+      "https://github.com/external-org/Private-Dashboard.git",
       join(tempRoot, "source.git"),
     ], {
       cwd: tempRoot,
       stdio: "ignore",
     });
     expect(exec).toHaveBeenNthCalledWith(2, "git", [
+      "-c",
+      `credential.helper=store --file=${join(tempRoot, "target-credentials")}`,
       "push",
       "--mirror",
-      "https://x-access-token:target-token@github.com/cedarville-it/campus-dashboard.git",
+      "https://github.com/cedarville-it/campus-dashboard.git",
     ], {
       cwd: join(tempRoot, "source.git"),
       stdio: "ignore",
     });
+    expect(exec.mock.calls.flatMap(([, args]) => args).join(" ")).not.toContain(
+      "source-token",
+    );
+    expect(exec.mock.calls.flatMap(([, args]) => args).join(" ")).not.toContain(
+      "target-token",
+    );
   });
 
   it("cleans up and preserves created target metadata when mirroring fails", async () => {

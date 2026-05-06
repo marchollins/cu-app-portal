@@ -437,14 +437,21 @@ export async function prepareExistingAppAction(
     throw new Error("Imported app repository is not ready for preparation.");
   }
 
-  await prisma.repositoryImport.update({
-    where: { id: appRequest.repositoryImport.id },
+  const runningImport = await prisma.repositoryImport.updateMany({
+    where: {
+      id: appRequest.repositoryImport.id,
+      preparationStatus: "PENDING_USER_CHOICE",
+    },
     data: {
       preparationMode: mode,
       preparationStatus: "RUNNING",
       preparationErrorSummary: null,
     },
   });
+
+  if (runningImport.count !== 1) {
+    throw new Error("Imported app preparation is not awaiting a user choice.");
+  }
 
   try {
     const result = await prepareImportedRepository({
@@ -501,6 +508,17 @@ export async function prepareExistingAppAction(
   revalidatePath("/apps");
 }
 
+function formatPublishReadinessError(readiness: {
+  missingPaths: string[];
+  packageIssues: string[];
+}) {
+  if (readiness.packageIssues.length > 0) {
+    return `Repository is not ready for publishing: ${readiness.packageIssues.join("; ")}`;
+  }
+
+  return `Missing publishing files on default branch: ${readiness.missingPaths.join(", ")}`;
+}
+
 export async function verifyExistingAppPreparationAction(
   requestId: string,
   deps: VerifyExistingAppPreparationDeps = {},
@@ -539,7 +557,7 @@ export async function verifyExistingAppPreparationAction(
       where: { id: appRequest.repositoryImport.id },
       data: {
         preparationStatus: "PULL_REQUEST_OPENED",
-        preparationErrorSummary: `Missing publishing files on default branch: ${readiness.missingPaths.join(", ")}`,
+        preparationErrorSummary: formatPublishReadinessError(readiness),
       },
     });
 

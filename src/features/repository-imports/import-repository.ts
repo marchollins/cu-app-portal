@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { GitHubRepoVisibility } from "@/features/repositories/config";
@@ -99,20 +99,20 @@ function defaultExec(
   });
 }
 
-function createTokenRemote({
-  owner,
-  name,
-  token,
-}: {
-  owner: string;
-  name: string;
-  token: string;
-}) {
-  return `https://x-access-token:${encodeURIComponent(token)}@github.com/${owner}/${name}.git`;
+function createRemote({ owner, name }: { owner: string; name: string }) {
+  return `https://github.com/${owner}/${name}.git`;
 }
 
-function createPublicRemote({ owner, name }: { owner: string; name: string }) {
-  return `https://github.com/${owner}/${name}.git`;
+async function writeCredentialStore(path: string, token: string) {
+  await writeFile(
+    path,
+    `https://x-access-token:${encodeURIComponent(token)}@github.com\n`,
+    { mode: 0o600 },
+  );
+}
+
+function credentialHelperArgs(path: string) {
+  return ["-c", `credential.helper=store --file=${path}`];
 }
 
 function isPossibleTargetCollision(error: unknown) {
@@ -235,9 +235,11 @@ export async function importRepositoryWithHistory({
 
     let targetToken: string;
     let sourceToken: string | null;
+    const targetCredentialsPath = join(tempRoot, "target-credentials");
 
     try {
       targetToken = await github.createInstallationTokenForGit();
+      await writeCredentialStore(targetCredentialsPath, targetToken);
     } catch (error) {
       throw toImportError({
         error,
@@ -250,6 +252,12 @@ export async function importRepositoryWithHistory({
       sourceToken = sourceGithub
         ? await sourceGithub.createInstallationTokenForGit()
         : null;
+      if (sourceToken) {
+        await writeCredentialStore(
+          join(tempRoot, "source-credentials"),
+          sourceToken,
+        );
+      }
     } catch (error) {
       throw toImportError({
         error,
@@ -263,15 +271,12 @@ export async function importRepositoryWithHistory({
       await exec(
         "git",
         [
+          ...(sourceToken
+            ? credentialHelperArgs(join(tempRoot, "source-credentials"))
+            : []),
           "clone",
           "--mirror",
-          sourceToken
-            ? createTokenRemote({
-                owner: source.owner,
-                name: source.name,
-                token: sourceToken,
-              })
-            : createPublicRemote({ owner: source.owner, name: source.name }),
+          createRemote({ owner: source.owner, name: source.name }),
           mirrorDir,
         ],
         { cwd: tempRoot, stdio: "ignore" },
@@ -284,12 +289,12 @@ export async function importRepositoryWithHistory({
       await exec(
         "git",
         [
+          ...credentialHelperArgs(targetCredentialsPath),
           "push",
           "--mirror",
-          createTokenRemote({
+          createRemote({
             owner: repository.owner,
             name: repository.name,
-            token: targetToken,
           }),
         ],
         { cwd: mirrorDir, stdio: "ignore" },

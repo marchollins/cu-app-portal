@@ -13,6 +13,19 @@ import { PUBLISHING_BUNDLE_PATHS } from "./compatibility";
 import { importRepositoryWithHistory } from "./import-repository";
 import { prepareImportedRepository } from "./prepare-repository";
 
+const readyPackageJson = JSON.stringify({
+  scripts: {
+    build: "next build",
+    start: "next start",
+  },
+  dependencies: {
+    next: "15.5.15",
+  },
+  engines: {
+    node: ">=24",
+  },
+});
+
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
@@ -705,7 +718,10 @@ describe("repository import actions", () => {
       repositoryOwner: "cedarville-it",
       repositoryName: "campus-dashboard",
       repositoryDefaultBranch: "main",
-      repositoryImport: { id: "import_123" },
+      repositoryImport: {
+        id: "import_123",
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
     } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
     vi.mocked(prepareImportedRepository).mockResolvedValue({
       status: "COMMITTED",
@@ -733,6 +749,17 @@ describe("repository import actions", () => {
       mode: "DIRECT_COMMIT",
       github: expect.any(Object),
     });
+    expect(prisma.repositoryImport.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "import_123",
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
+      data: {
+        preparationMode: "DIRECT_COMMIT",
+        preparationStatus: "RUNNING",
+        preparationErrorSummary: null,
+      },
+    });
     expect(prisma.repositoryImport.update).toHaveBeenCalledWith({
       where: { id: "import_123" },
       data: expect.objectContaining({
@@ -753,7 +780,10 @@ describe("repository import actions", () => {
       repositoryOwner: "cedarville-it",
       repositoryName: "campus-dashboard",
       repositoryDefaultBranch: "main",
-      repositoryImport: { id: "import_456" },
+      repositoryImport: {
+        id: "import_456",
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
     } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
     vi.mocked(prepareImportedRepository).mockRejectedValue(
       new Error(
@@ -796,6 +826,54 @@ describe("repository import actions", () => {
     );
   });
 
+  it("rejects preparation unless the import is awaiting a user choice", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_stale",
+      userId: "user-123",
+      appName: "Campus Dashboard",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      repositoryImport: {
+        id: "import_stale",
+        preparationStatus: "PULL_REQUEST_OPENED",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.repositoryImport.updateMany).mockResolvedValueOnce({
+      count: 0,
+    });
+
+    const formData = new FormData();
+    formData.set("preparationMode", "DIRECT_COMMIT");
+
+    await expect(
+      prepareExistingAppAction("req_stale", formData, {
+        github: {
+          getBranchHead: vi.fn(),
+          readRepositoryTextFiles: vi.fn(),
+          commitFiles: vi.fn(),
+          createPullRequestWithFiles: vi.fn(),
+        },
+      }),
+    ).rejects.toThrow(
+      "Imported app preparation is not awaiting a user choice.",
+    );
+
+    expect(prisma.repositoryImport.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "import_stale",
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
+      data: {
+        preparationMode: "DIRECT_COMMIT",
+        preparationStatus: "RUNNING",
+        preparationErrorSummary: null,
+      },
+    });
+    expect(prepareImportedRepository).not.toHaveBeenCalled();
+  });
+
   it("prepares with a case-insensitive installation lookup", async () => {
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
@@ -805,7 +883,10 @@ describe("repository import actions", () => {
       repositoryOwner: "Cedarville-IT",
       repositoryName: "campus-dashboard",
       repositoryDefaultBranch: "main",
-      repositoryImport: { id: "import_789" },
+      repositoryImport: {
+        id: "import_789",
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
     } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
     vi.mocked(prepareImportedRepository).mockResolvedValue({
       status: "PULL_REQUEST_OPENED",
@@ -846,7 +927,7 @@ describe("repository import actions", () => {
     } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
     const github = {
       readRepositoryTextFiles: vi.fn().mockResolvedValue({
-        "package.json": "{}",
+        "package.json": readyPackageJson,
         ...Object.fromEntries(
           PUBLISHING_BUNDLE_PATHS.map((path) => [path, "content"]),
         ),
@@ -859,7 +940,19 @@ describe("repository import actions", () => {
       owner: "cedarville-it",
       name: "campus-dashboard",
       ref: "main",
-      paths: ["package.json", ...PUBLISHING_BUNDLE_PATHS],
+      paths: [
+        "package.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "bun.lock",
+        "bun.lockb",
+        "pnpm-workspace.yaml",
+        "turbo.json",
+        "lerna.json",
+        "nx.json",
+        ...PUBLISHING_BUNDLE_PATHS,
+      ],
     });
     expect(prisma.repositoryImport.updateMany).toHaveBeenCalledWith({
       where: {
@@ -895,7 +988,7 @@ describe("repository import actions", () => {
     } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
     const github = {
       readRepositoryTextFiles: vi.fn().mockResolvedValue({
-        "package.json": "{}",
+        "package.json": readyPackageJson,
         ...Object.fromEntries(
           PUBLISHING_BUNDLE_PATHS.map((path) => [path, "content"]),
         ),
@@ -932,7 +1025,7 @@ describe("repository import actions", () => {
     const [missingPath, ...presentPaths] = PUBLISHING_BUNDLE_PATHS;
     const github = {
       readRepositoryTextFiles: vi.fn().mockResolvedValue({
-        "package.json": "{}",
+        "package.json": readyPackageJson,
         ...Object.fromEntries(presentPaths.map((path) => [path, "content"])),
       }),
     };
@@ -949,6 +1042,48 @@ describe("repository import actions", () => {
     expect(recordAuditEvent).not.toHaveBeenCalledWith(
       "REPOSITORY_PREPARATION_VERIFIED",
       expect.anything(),
+    );
+  });
+
+  it("keeps preparation in PR-opened state when package.json readiness is incomplete", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_incomplete_package",
+      userId: "user-123",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      repositoryImport: {
+        id: "import_incomplete_package",
+        preparationStatus: "PULL_REQUEST_OPENED",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    const github = {
+      readRepositoryTextFiles: vi.fn().mockResolvedValue({
+        "package.json": JSON.stringify({
+          scripts: { build: "next build" },
+          dependencies: { next: "15.5.15" },
+        }),
+        ...Object.fromEntries(
+          PUBLISHING_BUNDLE_PATHS.map((path) => [path, "content"]),
+        ),
+      }),
+    };
+
+    await verifyExistingAppPreparationAction("req_incomplete_package", { github });
+
+    expect(prisma.repositoryImport.update).toHaveBeenCalledWith({
+      where: { id: "import_incomplete_package" },
+      data: {
+        preparationStatus: "PULL_REQUEST_OPENED",
+        preparationErrorSummary:
+          'Repository is not ready for publishing: package.json is missing a start script; the portal can add "next start".; package.json is missing engines.node; the portal can add ">=24".',
+      },
+    });
+    expect(prisma.repositoryImport.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ preparationStatus: "COMMITTED" }),
+      }),
     );
   });
 });
