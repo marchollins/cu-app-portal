@@ -1,6 +1,7 @@
 import React from "react";
 import { notFound } from "next/navigation";
 import { TemplateForm } from "@/features/create-app/template-form";
+import { LogoutButton } from "@/features/auth/logout-button";
 import { getActiveTemplateBySlug } from "@/features/templates/catalog";
 
 export default async function TemplatePage({
@@ -17,6 +18,7 @@ export default async function TemplatePage({
 
   return (
     <main>
+      <LogoutButton />
       <h1>{template.name}</h1>
       <p>{template.description}</p>
       <p>

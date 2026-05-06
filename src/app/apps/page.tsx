@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { deleteAppAction } from "@/features/app-deletion/actions";
+import { LogoutButton } from "@/features/auth/logout-button";
 import { getCurrentUserIdOrNull } from "@/features/app-requests/current-user";
 import {
   publishToAzureAction,
@@ -312,6 +313,7 @@ export default async function MyAppsPage() {
         <span aria-hidden="true">/</span>
         <span aria-current="page">My Apps</span>
       </nav>
+      <LogoutButton />
       <h1>My Apps</h1>
       <p>Revisit your generated apps, managed repos, and portal publish status.</p>
       {appRequests.length === 0 ? (

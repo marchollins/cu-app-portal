@@ -15,6 +15,10 @@ vi.mock("@/features/app-deletion/actions", () => ({
   deleteAppAction: vi.fn(),
 }));
 
+vi.mock("@/features/auth/logout", () => ({
+  logoutAction: vi.fn(),
+}));
+
 vi.mock("@/features/repositories/actions", () => ({
   retryRepositoryBootstrapAction: vi.fn(),
   saveGitHubUsernameAndGrantAccessAction: vi.fn(),
@@ -100,6 +104,9 @@ describe("MyAppsPage", () => {
 
     expect(
       screen.getByRole("heading", { name: /my apps/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /log out/i }),
     ).toBeInTheDocument();
     expect(screen.getByText(/campus dashboard/i)).toBeInTheDocument();
     expect(screen.getByText(/repo: ready/i)).toBeInTheDocument();

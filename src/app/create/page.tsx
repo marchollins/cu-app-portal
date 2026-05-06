@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import { LogoutButton } from "@/features/auth/logout-button";
 import { getActiveTemplates } from "@/features/templates/catalog";
 
 export default async function CreatePage() {
@@ -7,6 +8,7 @@ export default async function CreatePage() {
 
   return (
     <main>
+      <LogoutButton />
       <h1>Create New App</h1>
       <ul>
         {templates.map((template) => (

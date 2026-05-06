@@ -6,6 +6,7 @@ import {
   publishToAzureAction,
   retryPublishAction,
 } from "@/features/publishing/actions";
+import { LogoutButton } from "@/features/auth/logout-button";
 import {
   retryRepositoryBootstrapAction,
   saveGitHubUsernameAndGrantAccessAction,
@@ -270,12 +271,15 @@ export default async function DownloadPage({
 
   return (
     <main>
+      <LogoutButton />
       <h1>Your App Is Ready</h1>
       <p>
         The portal generated the ZIP artifact and tracks the managed GitHub
         repository for supported publishing.
       </p>
-      <Link href={`/api/download/${requestId}`}>Download ZIP</Link>
+      {appRequest.repositoryStatus === "FAILED" ? (
+        <Link href={`/api/download/${requestId}`}>Download ZIP</Link>
+      ) : null}
       {renderRepositoryStatus(
         appRequest.repositoryStatus,
         appRequest.repositoryUrl,
