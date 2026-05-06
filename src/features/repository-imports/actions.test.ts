@@ -54,7 +54,7 @@ vi.mock("@/lib/db", () => ({
     const prismaMock = {
       template: { upsert: vi.fn() },
       appRequest: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
-      repositoryImport: { create: vi.fn(), update: vi.fn() },
+      repositoryImport: { create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
       $transaction: vi.fn((callback) => callback(prismaMock)),
     };
 
@@ -85,6 +85,8 @@ describe("repository import actions", () => {
     vi.mocked(prisma.appRequest.update).mockReset();
     vi.mocked(prisma.repositoryImport.create).mockReset();
     vi.mocked(prisma.repositoryImport.update).mockReset();
+    vi.mocked(prisma.repositoryImport.updateMany).mockReset();
+    vi.mocked(prisma.repositoryImport.updateMany).mockResolvedValue({ count: 1 });
     vi.mocked(prisma.$transaction).mockReset();
     vi.mocked(prisma.$transaction).mockImplementation((callback) =>
       callback(prisma),
@@ -395,8 +397,11 @@ describe("repository import actions", () => {
       ref: "main",
       paths: ["package.json", ...PUBLISHING_BUNDLE_PATHS],
     });
-    expect(prisma.repositoryImport.update).toHaveBeenCalledWith({
-      where: { id: "import_verify" },
+    expect(prisma.repositoryImport.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "import_verify",
+        preparationStatus: "PULL_REQUEST_OPENED",
+      },
       data: {
         preparationStatus: "COMMITTED",
         preparationErrorSummary: null,
@@ -408,6 +413,42 @@ describe("repository import actions", () => {
         requestId: "req_verify",
         targetRepository: "cedarville-it/campus-dashboard",
       },
+    );
+  });
+
+  it("rejects preparation verification unless the import is awaiting PR merge verification", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_pending",
+      userId: "user-123",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      repositoryImport: {
+        id: "import_pending",
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    const github = {
+      readRepositoryTextFiles: vi.fn().mockResolvedValue({
+        "package.json": "{}",
+        ...Object.fromEntries(
+          PUBLISHING_BUNDLE_PATHS.map((path) => [path, "content"]),
+        ),
+      }),
+    };
+
+    await expect(
+      verifyExistingAppPreparationAction("req_pending", { github }),
+    ).rejects.toThrow(
+      "Imported app preparation is not awaiting PR merge verification.",
+    );
+
+    expect(github.readRepositoryTextFiles).not.toHaveBeenCalled();
+    expect(prisma.repositoryImport.update).not.toHaveBeenCalled();
+    expect(recordAuditEvent).not.toHaveBeenCalledWith(
+      "REPOSITORY_PREPARATION_VERIFIED",
+      expect.anything(),
     );
   });
 

@@ -30,7 +30,7 @@ export async function verifyImportedPublishReadiness({
     ref: defaultBranch,
     paths: READINESS_PATHS,
   });
-  const missingPaths = PUBLISHING_BUNDLE_PATHS.filter(
+  const missingPaths = READINESS_PATHS.filter(
     (path) => !Object.prototype.hasOwnProperty.call(files, path),
   );
 

@@ -30,14 +30,17 @@ describe("verifyImportedPublishReadiness", () => {
     });
   });
 
-  it("reports missing publishing bundle paths without listing package.json", async () => {
+  it("reports missing publishing bundle paths", async () => {
     const [firstBundlePath, secondBundlePath, ...presentBundlePaths] =
       PUBLISHING_BUNDLE_PATHS;
     const github = {
       readRepositoryTextFiles: vi.fn().mockResolvedValue(
-        Object.fromEntries(
-          presentBundlePaths.map((path) => [path, "content"]),
-        ),
+        {
+          "package.json": "{}",
+          ...Object.fromEntries(
+            presentBundlePaths.map((path) => [path, "content"]),
+          ),
+        },
       ),
     };
 
@@ -51,6 +54,28 @@ describe("verifyImportedPublishReadiness", () => {
     ).resolves.toEqual({
       ready: false,
       missingPaths: [firstBundlePath, secondBundlePath],
+    });
+  });
+
+  it("reports missing package.json even when publishing bundle paths exist", async () => {
+    const github = {
+      readRepositoryTextFiles: vi.fn().mockResolvedValue({
+        ...Object.fromEntries(
+          PUBLISHING_BUNDLE_PATHS.map((path) => [path, "content"]),
+        ),
+      }),
+    };
+
+    await expect(
+      verifyImportedPublishReadiness({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        defaultBranch: "main",
+        github,
+      }),
+    ).resolves.toEqual({
+      ready: false,
+      missingPaths: ["package.json"],
     });
   });
 });

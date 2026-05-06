@@ -300,6 +300,12 @@ export async function verifyExistingAppPreparationAction(
     throw new Error("Imported app repository is not ready for verification.");
   }
 
+  if (appRequest.repositoryImport.preparationStatus !== "PULL_REQUEST_OPENED") {
+    throw new Error(
+      "Imported app preparation is not awaiting PR merge verification.",
+    );
+  }
+
   const readiness = await verifyImportedPublishReadiness({
     owner: appRequest.repositoryOwner,
     name: appRequest.repositoryName,
@@ -321,13 +327,22 @@ export async function verifyExistingAppPreparationAction(
     return;
   }
 
-  await prisma.repositoryImport.update({
-    where: { id: appRequest.repositoryImport.id },
+  const verifiedImport = await prisma.repositoryImport.updateMany({
+    where: {
+      id: appRequest.repositoryImport.id,
+      preparationStatus: "PULL_REQUEST_OPENED",
+    },
     data: {
       preparationStatus: "COMMITTED",
       preparationErrorSummary: null,
     },
   });
+
+  if (verifiedImport.count !== 1) {
+    throw new Error(
+      "Imported app preparation is not awaiting PR merge verification.",
+    );
+  }
 
   await recordAuditEvent("REPOSITORY_PREPARATION_VERIFIED", {
     requestId,
