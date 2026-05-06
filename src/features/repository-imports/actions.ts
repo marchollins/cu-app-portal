@@ -34,8 +34,13 @@ type PrepareExistingAppDeps = {
   github?: Parameters<typeof prepareImportedRepository>[0]["github"];
 };
 
-async function upsertImportedTemplate() {
-  return prisma.template.upsert({
+type RepositoryImportWriteClient = Pick<
+  typeof prisma,
+  "appRequest" | "repositoryImport" | "template"
+>;
+
+async function upsertImportedTemplate(db: RepositoryImportWriteClient) {
+  return db.template.upsert({
     where: { slug: "imported-web-app" },
     update: {
       slug: "imported-web-app",
@@ -60,6 +65,52 @@ async function upsertImportedTemplate() {
   });
 }
 
+function resolveInstallationId(
+  installationIdsByOrg: Record<string, string>,
+  owner: string,
+) {
+  const installation = Object.entries(installationIdsByOrg).find(
+    ([org]) => org.toLowerCase() === owner.toLowerCase(),
+  );
+
+  return installation?.[1] ?? null;
+}
+
+function createGitHubClientForOwner(owner: string) {
+  const config = loadGitHubAppConfig();
+  const installationId = resolveInstallationId(config.installationIdsByOrg, owner);
+
+  if (!installationId) {
+    throw new Error(
+      `No GitHub App installation is configured for org "${owner}".`,
+    );
+  }
+
+  return createGitHubAppClient({
+    appId: config.appId,
+    privateKey: config.privateKey,
+    installationId,
+  });
+}
+
+async function resolveRepository(
+  source: ReturnType<typeof parseGitHubRepositoryUrl>,
+  deps: AddExistingAppDeps,
+) {
+  if (deps.repository) {
+    return deps.repository;
+  }
+
+  return createGitHubClientForOwner(source.owner).getRepository({
+    owner: source.owner,
+    name: source.name,
+  });
+}
+
+function summarizeError(error: unknown) {
+  return error instanceof Error ? error.message : "unknown";
+}
+
 export async function addExistingAppAction(
   formData: FormData,
   deps: AddExistingAppDeps = {},
@@ -71,58 +122,57 @@ export async function addExistingAppAction(
   });
   const source = parseGitHubRepositoryUrl(parsed.repositoryUrl);
   const defaultOrg = deps.defaultOrg ?? loadGitHubAppConfig().defaultOrg;
-  const repository = deps.repository ?? {
-    owner: source.owner,
-    name: source.name,
-    url: source.normalizedUrl,
-    defaultBranch: "main",
-  };
+  const repository = await resolveRepository(source, deps);
   const userId = await resolveCurrentUserId();
-  const template = await upsertImportedTemplate();
   const supportReference = createSupportReference();
-  const isSharedOrgRepo = isRepositoryInOrg(source.owner, defaultOrg);
-  const request = await prisma.appRequest.create({
-    data: {
-      userId,
-      templateId: template.id,
-      templateVersion: "1.0.0",
-      appName: parsed.appName,
-      submittedConfig: {
-        repositoryUrl: source.normalizedUrl,
-        description: parsed.description ?? "",
-        hostingTarget: "Azure App Service",
+  const isSharedOrgRepo = isRepositoryInOrg(repository.owner, defaultOrg);
+  const request = await prisma.$transaction(async (tx) => {
+    const template = await upsertImportedTemplate(tx);
+    const appRequest = await tx.appRequest.create({
+      data: {
+        userId,
+        templateId: template.id,
+        templateVersion: "1.0.0",
+        appName: parsed.appName,
+        submittedConfig: {
+          repositoryUrl: source.normalizedUrl,
+          description: parsed.description ?? "",
+          hostingTarget: "Azure App Service",
+        },
+        generationStatus: "SUCCEEDED",
+        supportReference,
+        deploymentTarget: "Azure App Service",
+        sourceOfTruth: "IMPORTED_REPOSITORY",
+        repositoryProvider: "GITHUB",
+        repositoryOwner: repository.owner,
+        repositoryName: repository.name,
+        repositoryUrl: repository.url,
+        repositoryDefaultBranch: repository.defaultBranch,
+        repositoryVisibility: null,
+        repositoryStatus: "READY",
+        publishStatus: "NOT_STARTED",
       },
-      generationStatus: "SUCCEEDED",
-      supportReference,
-      deploymentTarget: "Azure App Service",
-      sourceOfTruth: "IMPORTED_REPOSITORY",
-      repositoryProvider: "GITHUB",
-      repositoryOwner: repository.owner,
-      repositoryName: repository.name,
-      repositoryUrl: repository.url,
-      repositoryDefaultBranch: repository.defaultBranch,
-      repositoryVisibility: null,
-      repositoryStatus: "READY",
-      publishStatus: "NOT_STARTED",
-    },
-  });
+    });
 
-  await prisma.repositoryImport.create({
-    data: {
-      appRequestId: request.id,
-      sourceRepositoryUrl: source.normalizedUrl,
-      sourceRepositoryOwner: source.owner,
-      sourceRepositoryName: source.name,
-      sourceRepositoryDefaultBranch: repository.defaultBranch,
-      targetRepositoryOwner: repository.owner,
-      targetRepositoryName: repository.name,
-      targetRepositoryUrl: repository.url,
-      targetRepositoryDefaultBranch: repository.defaultBranch,
-      importStatus: isSharedOrgRepo ? "NOT_REQUIRED" : "PENDING",
-      compatibilityStatus: "NOT_SCANNED",
-      compatibilityFindings: [],
-      preparationStatus: "PENDING_USER_CHOICE",
-    },
+    await tx.repositoryImport.create({
+      data: {
+        appRequestId: appRequest.id,
+        sourceRepositoryUrl: source.normalizedUrl,
+        sourceRepositoryOwner: source.owner,
+        sourceRepositoryName: source.name,
+        sourceRepositoryDefaultBranch: repository.defaultBranch,
+        targetRepositoryOwner: repository.owner,
+        targetRepositoryName: repository.name,
+        targetRepositoryUrl: repository.url,
+        targetRepositoryDefaultBranch: repository.defaultBranch,
+        importStatus: isSharedOrgRepo ? "NOT_REQUIRED" : "PENDING",
+        compatibilityStatus: "NOT_SCANNED",
+        compatibilityFindings: [],
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
+    });
+
+    return appRequest;
   });
 
   await recordAuditEvent("EXISTING_APP_ADD_REQUESTED", {
@@ -138,20 +188,7 @@ export async function addExistingAppAction(
 }
 
 function createDefaultPreparationGitHubClient(owner: string) {
-  const config = loadGitHubAppConfig();
-  const installationId = config.installationIdsByOrg[owner];
-
-  if (!installationId) {
-    throw new Error(
-      `No GitHub App installation is configured for org "${owner}".`,
-    );
-  }
-
-  return createGitHubAppClient({
-    appId: config.appId,
-    privateKey: config.privateKey,
-    installationId,
-  });
+  return createGitHubClientForOwner(owner);
 }
 
 export async function prepareExistingAppAction(
@@ -215,7 +252,7 @@ export async function prepareExistingAppAction(
       },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown";
+    const message = summarizeError(error);
 
     await prisma.repositoryImport.update({
       where: { id: appRequest.repositoryImport.id },
@@ -224,6 +261,13 @@ export async function prepareExistingAppAction(
         preparationStatus: "FAILED",
         preparationErrorSummary: message,
       },
+    });
+
+    await recordAuditEvent("REPOSITORY_PREPARATION_FAILED", {
+      requestId,
+      mode,
+      targetRepository: `${appRequest.repositoryOwner}/${appRequest.repositoryName}`,
+      error: message,
     });
 
     throw error;

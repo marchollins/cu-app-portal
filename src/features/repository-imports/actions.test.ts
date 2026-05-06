@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveCurrentUserId } from "@/features/app-requests/current-user";
+import { loadGitHubAppConfig } from "@/features/repositories/config";
+import { createGitHubAppClient } from "@/features/repositories/github-app";
 import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { addExistingAppAction, prepareExistingAppAction } from "./actions";
@@ -34,6 +36,7 @@ vi.mock("@/features/repositories/config", () => ({
 
 vi.mock("@/features/repositories/github-app", () => ({
   createGitHubAppClient: vi.fn(() => ({
+    getRepository: vi.fn(),
     getBranchHead: vi.fn(),
     readRepositoryTextFiles: vi.fn(),
     commitFiles: vi.fn(),
@@ -42,11 +45,16 @@ vi.mock("@/features/repositories/github-app", () => ({
 }));
 
 vi.mock("@/lib/db", () => ({
-  prisma: {
-    template: { upsert: vi.fn() },
-    appRequest: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
-    repositoryImport: { create: vi.fn(), update: vi.fn() },
-  },
+  prisma: (() => {
+    const prismaMock = {
+      template: { upsert: vi.fn() },
+      appRequest: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
+      repositoryImport: { create: vi.fn(), update: vi.fn() },
+      $transaction: vi.fn((callback) => callback(prismaMock)),
+    };
+
+    return prismaMock;
+  })(),
 }));
 
 vi.mock("./prepare-repository", () => ({
@@ -56,6 +64,15 @@ vi.mock("./prepare-repository", () => ({
 describe("repository import actions", () => {
   beforeEach(() => {
     vi.mocked(resolveCurrentUserId).mockReset();
+    vi.mocked(loadGitHubAppConfig).mockClear();
+    vi.mocked(createGitHubAppClient).mockReset();
+    vi.mocked(createGitHubAppClient).mockReturnValue({
+      getRepository: vi.fn(),
+      getBranchHead: vi.fn(),
+      readRepositoryTextFiles: vi.fn(),
+      commitFiles: vi.fn(),
+      createPullRequestWithFiles: vi.fn(),
+    });
     vi.mocked(recordAuditEvent).mockReset();
     vi.mocked(prisma.template.upsert).mockReset();
     vi.mocked(prisma.appRequest.create).mockReset();
@@ -63,6 +80,10 @@ describe("repository import actions", () => {
     vi.mocked(prisma.appRequest.update).mockReset();
     vi.mocked(prisma.repositoryImport.create).mockReset();
     vi.mocked(prisma.repositoryImport.update).mockReset();
+    vi.mocked(prisma.$transaction).mockReset();
+    vi.mocked(prisma.$transaction).mockImplementation((callback) =>
+      callback(prisma),
+    );
     vi.mocked(prepareImportedRepository).mockReset();
   });
 
@@ -108,6 +129,7 @@ describe("repository import actions", () => {
         compatibilityStatus: "NOT_SCANNED",
       }),
     });
+    expect(prisma.$transaction).toHaveBeenCalled();
     expect(recordAuditEvent).toHaveBeenCalledWith(
       "EXISTING_APP_ADD_REQUESTED",
       expect.objectContaining({
@@ -115,6 +137,66 @@ describe("repository import actions", () => {
         supportReference: "SUP-123",
       }),
     );
+  });
+
+  it("resolves repository metadata before creating ready records", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.template.upsert).mockResolvedValue({
+      id: "template-imported",
+    } as Awaited<ReturnType<typeof prisma.template.upsert>>);
+    vi.mocked(prisma.appRequest.create).mockResolvedValue({
+      id: "req_124",
+      supportReference: "SUP-123",
+    } as Awaited<ReturnType<typeof prisma.appRequest.create>>);
+    const github = {
+      getRepository: vi.fn().mockResolvedValue({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        url: "https://github.com/cedarville-it/campus-dashboard",
+        defaultBranch: "trunk",
+      }),
+      getBranchHead: vi.fn(),
+      readRepositoryTextFiles: vi.fn(),
+      commitFiles: vi.fn(),
+      createPullRequestWithFiles: vi.fn(),
+    };
+    vi.mocked(createGitHubAppClient).mockReturnValue(github);
+
+    const formData = new FormData();
+    formData.set("repositoryUrl", "https://github.com/Cedarville-IT/Campus-Dashboard");
+    formData.set("appName", "Campus Dashboard");
+
+    await addExistingAppAction(formData);
+
+    expect(createGitHubAppClient).toHaveBeenCalledWith({
+      appId: "123",
+      privateKey: "key",
+      installationId: "111",
+    });
+    expect(github.getRepository).toHaveBeenCalledWith({
+      owner: "Cedarville-IT",
+      name: "Campus-Dashboard",
+    });
+    expect(prisma.appRequest.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
+        repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        repositoryDefaultBranch: "trunk",
+        repositoryStatus: "READY",
+      }),
+    });
+    expect(prisma.repositoryImport.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sourceRepositoryOwner: "Cedarville-IT",
+        sourceRepositoryName: "Campus-Dashboard",
+        sourceRepositoryDefaultBranch: "trunk",
+        targetRepositoryOwner: "cedarville-it",
+        targetRepositoryName: "campus-dashboard",
+        targetRepositoryDefaultBranch: "trunk",
+        importStatus: "NOT_REQUIRED",
+      }),
+    });
   });
 
   it("prepares an imported app by direct commit", async () => {
@@ -205,5 +287,50 @@ describe("repository import actions", () => {
           "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists.",
       }),
     });
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      "REPOSITORY_PREPARATION_FAILED",
+      {
+        requestId: "req_456",
+        mode: "PULL_REQUEST",
+        targetRepository: "cedarville-it/campus-dashboard",
+        error:
+          "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists.",
+      },
+    );
+  });
+
+  it("prepares with a case-insensitive installation lookup", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_789",
+      userId: "user-123",
+      appName: "Campus Dashboard",
+      repositoryOwner: "Cedarville-IT",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      repositoryImport: { id: "import_789" },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prepareImportedRepository).mockResolvedValue({
+      status: "PULL_REQUEST_OPENED",
+      commitSha: "commit-sha",
+      pullRequestUrl: "https://github.com/Cedarville-IT/campus-dashboard/pull/1",
+    });
+
+    const formData = new FormData();
+    formData.set("preparationMode", "PULL_REQUEST");
+
+    await prepareExistingAppAction("req_789", formData);
+
+    expect(createGitHubAppClient).toHaveBeenCalledWith({
+      appId: "123",
+      privateKey: "key",
+      installationId: "111",
+    });
+    expect(prepareImportedRepository).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner: "Cedarville-IT",
+        github: expect.any(Object),
+      }),
+    );
   });
 });
