@@ -13,6 +13,8 @@ type RepositoryMetadata = {
 
 type RepositoryImportStage =
   | "create-target"
+  | "target-token"
+  | "source-token"
   | "clone"
   | "push"
   | "set-default-branch";
@@ -114,11 +116,72 @@ function createPublicRemote({ owner, name }: { owner: string; name: string }) {
 }
 
 function isPossibleTargetCollision(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  if (
+    /name.*already exists|already exists.*name|already exists on this account/i.test(
+      error.message,
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    "errors" in error &&
+    Array.isArray(error.errors) &&
+    error.errors.some((detail) => {
+      if (!detail || typeof detail !== "object") {
+        return false;
+      }
+
+      const field = "field" in detail ? String(detail.field) : "";
+      const message = "message" in detail ? String(detail.message) : "";
+      const code = "code" in detail ? String(detail.code) : "";
+
+      return (
+        field.toLowerCase() === "name" &&
+        /already exists|exists on this account|already_exists/i.test(
+          `${message} ${code}`,
+        )
+      );
+    })
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isTargetCreationValidationError(error: unknown) {
   return (
     error instanceof Error &&
-    (("status" in error && error.status === 422) ||
-      /already exists|name already exists/i.test(error.message))
+    "status" in error &&
+    error.status === 422
   );
+}
+
+function summarizeImportError({
+  error,
+  stage,
+}: {
+  error: unknown;
+  stage: RepositoryImportStage;
+}) {
+  if (stage === "create-target" && isTargetCreationValidationError(error)) {
+    return "Repository import failed while creating the target repository.";
+  }
+
+  if (stage === "target-token" || stage === "source-token") {
+    return "Repository import failed while preparing git authentication.";
+  }
+
+  if (stage === "set-default-branch") {
+    return "Repository import failed while setting the target default branch.";
+  }
+
+  return "Repository import failed while mirroring git history.";
 }
 
 function toImportError({
@@ -139,10 +202,7 @@ function toImportError({
   }
 
   return new RepositoryImportError({
-    message:
-      stage === "set-default-branch"
-        ? "Repository import failed while setting the target default branch."
-        : "Repository import failed while mirroring git history.",
+    message: summarizeImportError({ error, stage }),
     stage,
     targetRepository,
   });
@@ -173,10 +233,30 @@ export async function importRepositoryWithHistory({
       throw toImportError({ error, stage: "create-target" });
     }
 
-    const targetToken = await github.createInstallationTokenForGit();
-    const sourceToken = sourceGithub
-      ? await sourceGithub.createInstallationTokenForGit()
-      : null;
+    let targetToken: string;
+    let sourceToken: string | null;
+
+    try {
+      targetToken = await github.createInstallationTokenForGit();
+    } catch (error) {
+      throw toImportError({
+        error,
+        stage: "target-token",
+        targetRepository: repository,
+      });
+    }
+
+    try {
+      sourceToken = sourceGithub
+        ? await sourceGithub.createInstallationTokenForGit()
+        : null;
+    } catch (error) {
+      throw toImportError({
+        error,
+        stage: "source-token",
+        targetRepository: repository,
+      });
+    }
     const mirrorDir = join(tempRoot, "source.git");
 
     try {

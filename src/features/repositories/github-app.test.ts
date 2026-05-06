@@ -85,6 +85,51 @@ describe("createGitHubAppClient", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("preserves safe GitHub validation error details", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const validationErrors = [
+      {
+        resource: "Repository",
+        field: "name",
+        code: "custom",
+        message: "name already exists on this account",
+      },
+    ];
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(createJsonResponse({ token: "installation-token" }))
+      .mockResolvedValueOnce(
+        createJsonResponse(
+          {
+            message: "Repository creation failed.",
+            errors: validationErrors,
+          },
+          { status: 422, statusText: "Unprocessable Entity" },
+        ),
+      );
+
+    const client = createGitHubAppClient({
+      appId: "12345",
+      privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+      installationId: "111",
+      fetchImpl,
+    });
+
+    await expect(
+      client.createRepository({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        visibility: "private",
+        files: {},
+        defaultBranch: "main",
+        autoInit: false,
+      }),
+    ).rejects.toMatchObject({
+      status: 422,
+      errors: validationErrors,
+    });
+  });
+
   it("updates repository default branches after a mirror import", async () => {
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
     const fetchImpl = vi

@@ -168,6 +168,7 @@ type GitHubWorkflowRunResponse = {
 
 type GitHubApiError = Error & {
   status?: number;
+  errors?: unknown;
 };
 
 const GIT_REPO_INIT_RETRY_DELAYS_MS = [250, 500, 1000];
@@ -215,6 +216,14 @@ async function readJson<T>(response: Response): Promise<T> {
       }`,
     ) as GitHubApiError;
     error.status = response.status;
+    if (
+      responseJson &&
+      typeof responseJson === "object" &&
+      responseJson !== null &&
+      "errors" in responseJson
+    ) {
+      error.errors = responseJson.errors;
+    }
 
     throw error;
   }

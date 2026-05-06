@@ -210,6 +210,155 @@ describe("importRepositoryWithHistory", () => {
     expect(rm).toHaveBeenCalledWith(tempRoot, { recursive: true, force: true });
   });
 
+  it("preserves created target metadata when target token acquisition fails", async () => {
+    const tempRoot = join(tmpdir(), "portal-import-target-token-failure");
+    const exec = vi.fn().mockResolvedValue(undefined);
+    const github = {
+      createInstallationTokenForGit: vi.fn().mockRejectedValue(
+        new Error("token service unavailable for target-token-secret"),
+      ),
+      createRepository: vi.fn().mockResolvedValue({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        url: "https://github.com/cedarville-it/campus-dashboard",
+        defaultBranch: "main",
+      }),
+      updateRepositoryDefaultBranch: vi.fn(),
+    };
+    vi.mocked(mkdtemp).mockResolvedValue(tempRoot);
+
+    const failure = await importRepositoryWithHistory({
+      source: {
+        owner: "external-org",
+        name: "Campus-Dashboard",
+        url: "https://github.com/external-org/Campus-Dashboard",
+        defaultBranch: "main",
+      },
+      target: {
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        visibility: "private",
+      },
+      github,
+      exec,
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(RepositoryImportError);
+    expect(failure).toMatchObject({
+      message: "Repository import failed while preparing git authentication.",
+      stage: "target-token",
+      targetRepository: {
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        url: "https://github.com/cedarville-it/campus-dashboard",
+        defaultBranch: "main",
+      },
+    });
+    expect(String(failure.stack)).not.toContain("target-token-secret");
+    expect(exec).not.toHaveBeenCalled();
+    expect(rm).toHaveBeenCalledWith(tempRoot, { recursive: true, force: true });
+  });
+
+  it("preserves created target metadata when source token acquisition fails", async () => {
+    const tempRoot = join(tmpdir(), "portal-import-source-token-failure");
+    const exec = vi.fn().mockResolvedValue(undefined);
+    const github = {
+      createInstallationTokenForGit: vi.fn().mockResolvedValue("target-token"),
+      createRepository: vi.fn().mockResolvedValue({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        url: "https://github.com/cedarville-it/campus-dashboard",
+        defaultBranch: "main",
+      }),
+      updateRepositoryDefaultBranch: vi.fn(),
+    };
+    const sourceGithub = {
+      createInstallationTokenForGit: vi.fn().mockRejectedValue(
+        new Error("token service unavailable for source-token-secret"),
+      ),
+    };
+    vi.mocked(mkdtemp).mockResolvedValue(tempRoot);
+
+    const failure = await importRepositoryWithHistory({
+      source: {
+        owner: "external-org",
+        name: "Private-Dashboard",
+        url: "https://github.com/external-org/Private-Dashboard",
+        defaultBranch: "main",
+      },
+      target: {
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        visibility: "private",
+      },
+      sourceGithub,
+      github,
+      exec,
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(RepositoryImportError);
+    expect(failure).toMatchObject({
+      message: "Repository import failed while preparing git authentication.",
+      stage: "source-token",
+      targetRepository: {
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        url: "https://github.com/cedarville-it/campus-dashboard",
+        defaultBranch: "main",
+      },
+    });
+    expect(String(failure.stack)).not.toContain("source-token-secret");
+    expect(exec).not.toHaveBeenCalled();
+    expect(rm).toHaveBeenCalledWith(tempRoot, { recursive: true, force: true });
+  });
+
+  it("does not classify non-name GitHub 422 target creation failures as collisions", async () => {
+    const tempRoot = join(tmpdir(), "portal-import-policy-failure");
+    const policyError = Object.assign(
+      new Error("GitHub API request failed: 422 Unprocessable Entity - visibility policy blocked"),
+      {
+        status: 422,
+        errors: [
+          {
+            resource: "Repository",
+            field: "visibility",
+            code: "custom",
+            message: "private repositories are disabled",
+          },
+        ],
+      },
+    );
+    const github = {
+      createInstallationTokenForGit: vi.fn(),
+      createRepository: vi.fn().mockRejectedValue(policyError),
+      updateRepositoryDefaultBranch: vi.fn(),
+    };
+    vi.mocked(mkdtemp).mockResolvedValue(tempRoot);
+
+    await expect(
+      importRepositoryWithHistory({
+        source: {
+          owner: "external-org",
+          name: "Campus-Dashboard",
+          url: "https://github.com/external-org/Campus-Dashboard",
+          defaultBranch: "main",
+        },
+        target: {
+          owner: "cedarville-it",
+          name: "campus-dashboard",
+          visibility: "private",
+        },
+        github,
+        exec: vi.fn(),
+      }),
+    ).rejects.toMatchObject({
+      name: "RepositoryImportError",
+      message: "Repository import failed while creating the target repository.",
+      stage: "create-target",
+      code: undefined,
+    });
+  });
+
   it("marks default-branch update failures with the target metadata and stage", async () => {
     const tempRoot = join(tmpdir(), "portal-import-default-branch-failure");
     const exec = vi.fn().mockResolvedValue(undefined);
