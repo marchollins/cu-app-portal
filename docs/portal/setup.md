@@ -36,6 +36,14 @@ Notes for GitHub App setup:
 - `GITHUB_DEFAULT_ORG` must match one of the orgs allowed by `GITHUB_ALLOWED_ORGS`.
 - The GitHub App needs enough repository administration permission to delete portal-managed repositories when a user selects GitHub deletion from `My Apps`.
 
+### Add Existing App
+
+The add-existing-app flow uses the same GitHub App configuration as portal-managed repository creation. In V1, the portal accepts repositories it can read through the configured GitHub App installation or through public GitHub access; there is no user GitHub OAuth or personal access token access in V1.
+
+When a submitted repository is outside `GITHUB_DEFAULT_ORG`, the portal imports it into the default org with a short-lived GitHub App installation token and preserves the source repository history. The GitHub App needs repository creation permission in the target org, plus read access to private source repositories that are imported.
+
+V1 supports root Node/Next apps that build with `npm run build` and run on Azure App Service Node 24. After import or scan, the portal prepares the repository for the supported Azure App Service publishing path.
+
 ### Portal-Managed Azure Publishing
 
 To enable portal-managed Azure publishing for generated user apps, configure the portal with the shared Azure publish target and generated-app auth settings:
