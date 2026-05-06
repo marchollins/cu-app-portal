@@ -199,6 +199,32 @@ describe("repository import actions", () => {
     });
   });
 
+  it("does not look up repositories when authentication fails", async () => {
+    vi.mocked(resolveCurrentUserId).mockRejectedValue(new Error("unauthorized"));
+    const github = {
+      getRepository: vi.fn().mockResolvedValue({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        url: "https://github.com/cedarville-it/campus-dashboard",
+        defaultBranch: "main",
+      }),
+      getBranchHead: vi.fn(),
+      readRepositoryTextFiles: vi.fn(),
+      commitFiles: vi.fn(),
+      createPullRequestWithFiles: vi.fn(),
+    };
+    vi.mocked(createGitHubAppClient).mockReturnValue(github);
+
+    const formData = new FormData();
+    formData.set("repositoryUrl", "https://github.com/cedarville-it/campus-dashboard");
+    formData.set("appName", "Campus Dashboard");
+
+    await expect(addExistingAppAction(formData)).rejects.toThrow("unauthorized");
+
+    expect(github.getRepository).not.toHaveBeenCalled();
+    expect(prisma.appRequest.create).not.toHaveBeenCalled();
+  });
+
   it("prepares an imported app by direct commit", async () => {
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({

@@ -120,10 +120,10 @@ export async function addExistingAppAction(
     appName: String(formData.get("appName") ?? ""),
     description: String(formData.get("description") ?? ""),
   });
+  const userId = await resolveCurrentUserId();
   const source = parseGitHubRepositoryUrl(parsed.repositoryUrl);
   const defaultOrg = deps.defaultOrg ?? loadGitHubAppConfig().defaultOrg;
   const repository = await resolveRepository(source, deps);
-  const userId = await resolveCurrentUserId();
   const supportReference = createSupportReference();
   const isSharedOrgRepo = isRepositoryInOrg(repository.owner, defaultOrg);
   const request = await prisma.$transaction(async (tx) => {

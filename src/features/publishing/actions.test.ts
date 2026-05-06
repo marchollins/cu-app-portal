@@ -110,6 +110,28 @@ describe("publishing actions", () => {
     });
   });
 
+  it("rejects imported app publish requests before repository preparation is committed", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "request-123",
+      userId: "user-123",
+      repositoryStatus: "READY",
+      publishStatus: "NOT_STARTED",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      repositoryImport: {
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+
+    await expect(publishToAzureAction("request-123")).rejects.toThrow(
+      "Imported app repository preparation must be committed before publishing.",
+    );
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.publishAttempt.create).not.toHaveBeenCalled();
+    expect(runPublishAttempt).not.toHaveBeenCalled();
+  });
+
   it("starts the publish worker after queueing an attempt", async () => {
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({

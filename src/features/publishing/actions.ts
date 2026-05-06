@@ -15,6 +15,9 @@ async function loadOwnedAppRequest(requestId: string) {
       id: requestId,
       userId,
     },
+    include: {
+      repositoryImport: true,
+    },
   });
 
   if (!appRequest) {
@@ -77,6 +80,15 @@ async function queuePublishAttempt(
 
   if (appRequest.repositoryStatus !== "READY") {
     throw new Error("Managed repository is not ready for publishing.");
+  }
+
+  if (
+    appRequest.sourceOfTruth === "IMPORTED_REPOSITORY" &&
+    appRequest.repositoryImport?.preparationStatus !== "COMMITTED"
+  ) {
+    throw new Error(
+      "Imported app repository preparation must be committed before publishing.",
+    );
   }
 
   const attemptId = await prisma.$transaction(async (tx) => {
