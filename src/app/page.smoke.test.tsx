@@ -12,5 +12,8 @@ describe("HomePage", () => {
     expect(
       screen.getByRole("link", { name: /create new app/i }),
     ).toHaveAttribute("href", "/create");
+    expect(
+      screen.getByRole("link", { name: /add existing app/i }),
+    ).toHaveAttribute("href", "/apps/add");
   });
 });

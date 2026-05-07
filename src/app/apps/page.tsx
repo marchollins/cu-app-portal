@@ -14,13 +14,25 @@ import {
 import { buildCodexHandoffPrompt } from "@/features/repositories/codex-handoff";
 import { CopyCodexHandoffButton } from "@/features/repositories/copy-codex-handoff-button";
 import { PendingSubmitButton } from "@/features/forms/pending-submit-button";
+import {
+  prepareExistingAppAction,
+  verifyExistingAppPreparationAction,
+} from "@/features/repository-imports/actions";
 import { prisma } from "@/lib/db";
+
+const PREPARATION_REQUIRED_MESSAGE =
+  "Azure publishing unavailable until repository preparation is committed.";
 
 type BadgeVariant = "success" | "error" | "warning" | "info" | "default";
 
 function statusBadge(status: string): { label: string; variant: BadgeVariant } {
   const s = status.toLowerCase();
-  if (s === "ready" || s === "succeeded" || s === "granted" || s === "completed") {
+  if (
+    s === "ready" ||
+    s === "succeeded" ||
+    s === "granted" ||
+    s === "completed"
+  ) {
     return { label: formatStatus(status), variant: "success" };
   }
   if (s === "failed") return { label: "Failed", variant: "error" };
@@ -34,6 +46,15 @@ function formatStatus(status: string) {
   return status.toLowerCase().replaceAll("_", " ");
 }
 
+function isImportedRepositoryPrepared(
+  sourceOfTruth: string | undefined,
+  preparationStatus: string | null | undefined,
+) {
+  return (
+    sourceOfTruth !== "IMPORTED_REPOSITORY" || preparationStatus === "COMMITTED"
+  );
+}
+
 function getDisplayPublishUrl(
   primaryPublishUrl: string | null,
   publishUrl: string | null,
@@ -41,9 +62,19 @@ function getDisplayPublishUrl(
   return publishUrl ?? primaryPublishUrl;
 }
 
-function renderActionButton(requestId: string, repositoryStatus: string, publishStatus: string) {
+function renderActionButton(
+  requestId: string,
+  repositoryStatus: string,
+  publishStatus: string,
+  sourceOfTruth?: string,
+  preparationStatus?: string | null,
+) {
   if (repositoryStatus === "DELETED") {
-    return <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>Repo deleted</span>;
+    return (
+      <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+        Repo deleted
+      </span>
+    );
   }
 
   if (repositoryStatus === "FAILED") {
@@ -61,7 +92,19 @@ function renderActionButton(requestId: string, repositoryStatus: string, publish
   }
 
   if (repositoryStatus !== "READY") {
-    return <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>Awaiting repo setup</span>;
+    return (
+      <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+        Awaiting repo setup
+      </span>
+    );
+  }
+
+  if (!isImportedRepositoryPrepared(sourceOfTruth, preparationStatus)) {
+    return (
+      <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+        {PREPARATION_REQUIRED_MESSAGE}
+      </span>
+    );
   }
 
   if (publishStatus === "FAILED") {
@@ -79,7 +122,11 @@ function renderActionButton(requestId: string, repositoryStatus: string, publish
   }
 
   if (publishStatus === "DELETED") {
-    return <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>Deployment deleted</span>;
+    return (
+      <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+        Deployment deleted
+      </span>
+    );
   }
 
   if (publishStatus === "NOT_STARTED" || publishStatus === "SUCCEEDED") {
@@ -96,7 +143,88 @@ function renderActionButton(requestId: string, repositoryStatus: string, publish
     );
   }
 
-  return <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>Publish in progress…</span>;
+  return (
+    <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+      Publish in progress…
+    </span>
+  );
+}
+
+function renderImportedRepositoryStatus(request: {
+  id: string;
+  repositoryImport: {
+    sourceRepositoryUrl: string;
+    importStatus: string;
+    importErrorSummary?: string | null;
+    compatibilityStatus: string;
+    preparationStatus: string;
+    preparationPullRequestUrl?: string | null;
+    preparationErrorSummary?: string | null;
+  } | null;
+}) {
+  const repositoryImport = request.repositoryImport;
+
+  if (!repositoryImport) {
+    return null;
+  }
+
+  const prepareAction = prepareExistingAppAction.bind(null, request.id);
+  const verifyAction = verifyExistingAppPreparationAction.bind(
+    null,
+    request.id,
+    undefined,
+  );
+
+  return (
+    <section aria-label="Imported repository status" style={{ marginTop: "1rem" }}>
+      <h3 style={{ fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.5rem", color: "var(--text-secondary)" }}>
+        Imported repository status
+      </h3>
+      <div className="status-table">
+        <p>Source repo: {repositoryImport.sourceRepositoryUrl}</p>
+        <p>Import: {formatStatus(repositoryImport.importStatus)}</p>
+        {repositoryImport.importErrorSummary ? (
+          <p>Import error: {repositoryImport.importErrorSummary}</p>
+        ) : null}
+        <p>Compatibility: {formatStatus(repositoryImport.compatibilityStatus)}</p>
+        <p>Preparation: {formatStatus(repositoryImport.preparationStatus)}</p>
+        {repositoryImport.preparationPullRequestUrl ? (
+          <p>
+            Preparation PR:{" "}
+            <a href={repositoryImport.preparationPullRequestUrl}>
+              {repositoryImport.preparationPullRequestUrl}
+            </a>
+          </p>
+        ) : null}
+        {repositoryImport.preparationErrorSummary ? (
+          <p>Preparation error: {repositoryImport.preparationErrorSummary}</p>
+        ) : null}
+      </div>
+      {repositoryImport.preparationStatus === "PENDING_USER_CHOICE" ? (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
+          <form action={prepareAction}>
+            <input name="preparationMode" type="hidden" value="DIRECT_COMMIT" />
+            <button type="submit" className="btn btn--primary-solid btn--sm">
+              Commit Azure Publishing Additions
+            </button>
+          </form>
+          <form action={prepareAction}>
+            <input name="preparationMode" type="hidden" value="PULL_REQUEST" />
+            <button type="submit" className="btn btn--ghost btn--sm">
+              Open Azure Publishing PR
+            </button>
+          </form>
+        </div>
+      ) : null}
+      {repositoryImport.preparationStatus === "PULL_REQUEST_OPENED" ? (
+        <form action={verifyAction} style={{ marginTop: "0.75rem" }}>
+          <button type="submit" className="btn btn--ghost btn--sm">
+            Verify PR Merge
+          </button>
+        </form>
+      ) : null}
+    </section>
+  );
 }
 
 function renderDeletePanel(request: {
@@ -139,7 +267,13 @@ function renderDeletePanel(request: {
                 </code>
               </label>
             ) : (
-              <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", margin: 0 }}>
+              <p
+                style={{
+                  fontSize: "0.875rem",
+                  color: "var(--text-muted)",
+                  margin: 0,
+                }}
+              >
                 GitHub repository already deleted or not tracked.
               </p>
             )}
@@ -157,7 +291,13 @@ function renderDeletePanel(request: {
                 </span>
               </label>
             ) : (
-              <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", margin: 0 }}>
+              <p
+                style={{
+                  fontSize: "0.875rem",
+                  color: "var(--text-muted)",
+                  margin: 0,
+                }}
+              >
                 Azure deployment already deleted or not tracked.
               </p>
             )}
@@ -192,6 +332,7 @@ export default async function MyAppsPage() {
         orderBy: { createdAt: "desc" },
         take: 1,
       },
+      repositoryImport: true,
     },
   });
   const currentUser = await prisma.user.findUnique({
@@ -203,13 +344,26 @@ export default async function MyAppsPage() {
     <main>
       <nav aria-label="Breadcrumb" className="breadcrumb">
         <Link href="/">Home</Link>
-        <span className="breadcrumb__sep" aria-hidden="true">/</span>
+        <span className="breadcrumb__sep" aria-hidden="true">
+          /
+        </span>
         <Link href="/create">Create New App</Link>
-        <span className="breadcrumb__sep" aria-hidden="true">/</span>
+        <span className="breadcrumb__sep" aria-hidden="true">
+          /
+        </span>
         <span aria-current="page">My Apps</span>
       </nav>
 
-      <div className="page-header" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+      <div
+        className="page-header"
+        style={{
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "1rem",
+        }}
+      >
         <div>
           <h1>My Apps</h1>
           <p>Manage your generated apps, repositories, and Azure deployments.</p>
@@ -231,7 +385,10 @@ export default async function MyAppsPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid--2" style={{ gap: "1.25rem" }}>
+        <ul
+          className="grid grid--2"
+          style={{ gap: "1.25rem", listStyle: "none", padding: 0, margin: 0 }}
+        >
           {appRequests.map((request) => {
             const displayPublishUrl = getDisplayPublishUrl(
               request.primaryPublishUrl,
@@ -243,23 +400,35 @@ export default async function MyAppsPage() {
             const accessBadge = statusBadge(request.repositoryAccessStatus);
 
             return (
-              <div key={request.id} className="app-card">
+              <li key={request.id} className="app-card">
                 <div className="app-card__header">
                   <h2 className="app-card__name">{request.appName}</h2>
                 </div>
 
                 <div className="app-card__body">
                   <div className="app-card__statuses">
-                    <span className={`badge badge--${genBadge.variant}`} title="Generation">
+                    <span
+                      className={`badge badge--${genBadge.variant}`}
+                      title="Generation"
+                    >
                       Gen: {genBadge.label}
                     </span>
-                    <span className={`badge badge--${repoBadge.variant}`} title="Repository">
+                    <span
+                      className={`badge badge--${repoBadge.variant}`}
+                      title="Repository"
+                    >
                       Repo: {repoBadge.label}
                     </span>
-                    <span className={`badge badge--${pubBadge.variant}`} title="Publish">
+                    <span
+                      className={`badge badge--${pubBadge.variant}`}
+                      title="Publish"
+                    >
                       Publish: {pubBadge.label}
                     </span>
-                    <span className={`badge badge--${accessBadge.variant}`} title="Repo Access">
+                    <span
+                      className={`badge badge--${accessBadge.variant}`}
+                      title="Repo Access"
+                    >
                       Repo access: {accessBadge.label}
                     </span>
                   </div>
@@ -268,8 +437,16 @@ export default async function MyAppsPage() {
                     {request.repositoryUrl ? (
                       <div className="status-row">
                         <span className="status-row__label">Repository</span>
-                        <a href={request.repositoryUrl} target="_blank" rel="noreferrer" className="meta-link">
-                          {request.repositoryUrl.replace("https://github.com/", "")}
+                        <a
+                          href={request.repositoryUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="meta-link"
+                        >
+                          {request.repositoryUrl.replace(
+                            "https://github.com/",
+                            "",
+                          )}
                         </a>
                       </div>
                     ) : null}
@@ -280,14 +457,24 @@ export default async function MyAppsPage() {
                     ) : null}
                     {displayPublishUrl ? (
                       <div className="status-row">
-                        <a href={displayPublishUrl} target="_blank" rel="noreferrer" className="meta-link">
+                        <a
+                          href={displayPublishUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="meta-link"
+                        >
                           {displayPublishUrl}
                         </a>
                       </div>
                     ) : null}
                     {request.publishAttempts[0]?.githubWorkflowRunUrl ? (
                       <div className="status-row">
-                        <a href={request.publishAttempts[0].githubWorkflowRunUrl} target="_blank" rel="noreferrer" className="meta-link">
+                        <a
+                          href={request.publishAttempts[0].githubWorkflowRunUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="meta-link"
+                        >
                           GitHub workflow
                         </a>
                       </div>
@@ -297,16 +484,32 @@ export default async function MyAppsPage() {
                   {request.repositoryStatus === "READY" &&
                   request.repositoryAccessStatus !== "GRANTED" ? (
                     <div style={{ marginTop: "1rem" }}>
-                      <p style={{ fontSize: "0.875rem", marginBottom: "0.75rem" }}>
+                      <p
+                        style={{
+                          fontSize: "0.875rem",
+                          marginBottom: "0.75rem",
+                        }}
+                      >
                         Need GitHub access for Codex?{" "}
-                        <a href="https://github.com/signup" target="_blank" rel="noreferrer">
+                        <a
+                          href="https://github.com/signup"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
                           Create a GitHub account
                         </a>{" "}
                         then enter your username below.
                       </p>
                       <form
-                        action={saveGitHubUsernameAndGrantAccessAction.bind(null, request.id)}
-                        style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}
+                        action={saveGitHubUsernameAndGrantAccessAction.bind(
+                          null,
+                          request.id,
+                        )}
+                        style={{
+                          display: "flex",
+                          gap: "0.5rem",
+                          flexWrap: "wrap",
+                        }}
                       >
                         <input
                           name="githubUsername"
@@ -317,7 +520,10 @@ export default async function MyAppsPage() {
                           className="form-control"
                           style={{ maxWidth: "220px" }}
                         />
-                        <button type="submit" className="btn btn--secondary-solid btn--sm">
+                        <button
+                          type="submit"
+                          className="btn btn--secondary-solid btn--sm"
+                        >
                           {request.repositoryAccessStatus === "INVITED"
                             ? "Resend Invite"
                             : "Grant Access"}
@@ -326,8 +532,16 @@ export default async function MyAppsPage() {
                     </div>
                   ) : null}
 
+                  {renderImportedRepositoryStatus({
+                    id: request.id,
+                    repositoryImport: request.repositoryImport,
+                  })}
+
                   <div className="app-card__actions">
-                    <Link href={`/download/${request.id}`} className="btn btn--ghost btn--sm">
+                    <Link
+                      href={`/download/${request.id}`}
+                      className="btn btn--ghost btn--sm"
+                    >
                       App Details
                     </Link>
                     {request.repositoryUrl ? (
@@ -343,6 +557,8 @@ export default async function MyAppsPage() {
                       request.id,
                       request.repositoryStatus,
                       request.publishStatus,
+                      request.sourceOfTruth,
+                      request.repositoryImport?.preparationStatus,
                     )}
                   </div>
 
@@ -356,10 +572,10 @@ export default async function MyAppsPage() {
                     azureDatabaseName: request.azureDatabaseName,
                   })}
                 </div>
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
     </main>
   );

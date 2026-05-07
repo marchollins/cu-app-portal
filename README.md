@@ -6,6 +6,8 @@ Internal portal for Cedarville staff to create a new app package from an approve
 
 The portal signs staff in with Microsoft Entra ID, guides them through a template-backed app creation form, generates a ZIP package, and now treats a portal-created GitHub repository as the canonical source of truth for supported publishing.
 
+Users can also add an existing compatible GitHub app repository. If the source repository is outside the configured Cedarville GitHub org, the portal imports it into the shared org while preserving history, scans and prepares it for Node/Next Azure App Service publishing, and lets the user choose either direct publishing additions or a review PR.
+
 The current `web-app` template now includes an Azure-first publishing bundle for generated apps:
 
 - a minimal Next.js starter repo skeleton

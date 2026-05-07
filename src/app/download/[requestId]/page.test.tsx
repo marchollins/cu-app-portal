@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DownloadPage from "./page";
 
@@ -29,6 +29,11 @@ vi.mock("@/features/publishing/actions", () => ({
 vi.mock("@/features/repositories/actions", () => ({
   retryRepositoryBootstrapAction: vi.fn(),
   saveGitHubUsernameAndGrantAccessAction: vi.fn(),
+}));
+
+vi.mock("@/features/repository-imports/actions", () => ({
+  prepareExistingAppAction: vi.fn(),
+  verifyExistingAppPreparationAction: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -100,11 +105,174 @@ describe("DownloadPage", () => {
     expect(
       screen.queryByText(/create a new github repository/i),
     ).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /download zip/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /download zip/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/repo access granted/i)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /publish to azure/i }),
     ).toBeInTheDocument();
+    expect(prisma.appRequest.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          repositoryImport: true,
+        }),
+      }),
+    );
+  });
+
+  it("hides publish actions for unprepared imported apps", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_import",
+      appName: "Campus Dashboard",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      repositoryStatus: "READY",
+      repositoryAccessStatus: "GRANTED",
+      repositoryAccessNote: null,
+      repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+      publishStatus: "FAILED",
+      publishUrl: null,
+      primaryPublishUrl: null,
+      azureWebAppName: null,
+      publishErrorSummary: null,
+      repositoryImport: {
+        sourceRepositoryUrl: "https://github.com/example/campus-dashboard",
+        importStatus: "SUCCEEDED",
+        compatibilityStatus: "NEEDS_ADDITIONS",
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
+      artifact: {
+        id: "artifact-import",
+      },
+      publishAttempts: [],
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(
+      await DownloadPage({
+        params: Promise.resolve({ requestId: "req_import" }),
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        /azure publishing unavailable until repository preparation is committed/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /publish to azure/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /retry publish/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows imported app details even when no generated artifact exists", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_import_no_artifact",
+      appName: "Campus Dashboard",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      repositoryStatus: "READY",
+      repositoryAccessStatus: "GRANTED",
+      repositoryAccessNote: null,
+      repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+      publishStatus: "NOT_STARTED",
+      publishUrl: null,
+      primaryPublishUrl: null,
+      azureWebAppName: null,
+      publishErrorSummary: null,
+      repositoryImport: {
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
+      artifact: null,
+      publishAttempts: [],
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(
+      await DownloadPage({
+        params: Promise.resolve({ requestId: "req_import_no_artifact" }),
+      }),
+    );
+
+    expect(
+      screen.getByRole("heading", { name: /imported app details/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", {
+        name: "https://github.com/cedarville-it/campus-dashboard",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /download zip/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /azure publishing unavailable until repository preparation is committed/i,
+      ),
+    ).toBeInTheDocument();
+    const importedStatus = screen.getByRole("region", {
+      name: /imported repository status/i,
+    });
+    expect(
+      within(importedStatus).getByRole("button", {
+        name: /commit azure publishing additions/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(importedStatus).getByRole("button", {
+        name: /open azure publishing pr/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows publish actions for committed imported apps", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_import_ready",
+      appName: "Campus Dashboard",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      repositoryStatus: "READY",
+      repositoryAccessStatus: "GRANTED",
+      repositoryAccessNote: null,
+      repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+      publishStatus: "NOT_STARTED",
+      publishUrl: null,
+      primaryPublishUrl: null,
+      azureWebAppName: null,
+      publishErrorSummary: null,
+      repositoryImport: {
+        preparationStatus: "COMMITTED",
+      },
+      artifact: {
+        id: "artifact-import-ready",
+      },
+      publishAttempts: [],
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(
+      await DownloadPage({
+        params: Promise.resolve({ requestId: "req_import_ready" }),
+      }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: /publish to azure/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        /azure publishing unavailable until repository preparation is committed/i,
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("shows Azure publish and workflow metadata when present", async () => {

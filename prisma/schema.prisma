@@ -72,6 +72,7 @@ model AppRequest {
   template         Template           @relation(fields: [templateId], references: [id])
   artifact         GeneratedArtifact?
   publishAttempts  PublishAttempt[]
+  repositoryImport RepositoryImport?
 }
 
 model GeneratedArtifact {
@@ -103,6 +104,31 @@ model PublishAttempt {
   appRequest   AppRequest           @relation(fields: [appRequestId], references: [id])
 }
 
+model RepositoryImport {
+  id                            String                        @id @default(cuid())
+  appRequestId                  String                        @unique
+  sourceRepositoryUrl           String
+  sourceRepositoryOwner         String
+  sourceRepositoryName          String
+  sourceRepositoryDefaultBranch String?
+  targetRepositoryOwner         String
+  targetRepositoryName          String
+  targetRepositoryUrl           String?
+  targetRepositoryDefaultBranch String?
+  importStatus                  RepositoryImportStatus
+  importErrorSummary            String?
+  compatibilityStatus           RepositoryCompatibilityStatus @default(NOT_SCANNED)
+  compatibilityFindings         Json
+  preparationMode               RepositoryPreparationMode?
+  preparationStatus             RepositoryPreparationStatus   @default(NOT_STARTED)
+  preparationBranch             String?
+  preparationPullRequestUrl     String?
+  preparationErrorSummary       String?
+  createdAt                     DateTime                      @default(now())
+  updatedAt                     DateTime                      @updatedAt
+  appRequest                    AppRequest                    @relation(fields: [appRequestId], references: [id], onDelete: Cascade)
+}
+
 enum TemplateStatus {
   ACTIVE
   DISABLED
@@ -116,6 +142,7 @@ enum GenerationStatus {
 
 enum SourceOfTruth {
   PORTAL_MANAGED_REPO
+  IMPORTED_REPOSITORY
 }
 
 enum RepositoryProvider {
@@ -160,4 +187,36 @@ enum PublishAttemptStage {
   VERIFYING
   COMPLETED
   FAILED
+}
+
+enum RepositoryImportStatus {
+  NOT_REQUIRED
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  BLOCKED
+}
+
+enum RepositoryCompatibilityStatus {
+  NOT_SCANNED
+  COMPATIBLE
+  NEEDS_ADDITIONS
+  UNSUPPORTED
+  CONFLICTED
+}
+
+enum RepositoryPreparationMode {
+  DIRECT_COMMIT
+  PULL_REQUEST
+}
+
+enum RepositoryPreparationStatus {
+  NOT_STARTED
+  PENDING_USER_CHOICE
+  RUNNING
+  COMMITTED
+  PULL_REQUEST_OPENED
+  FAILED
+  BLOCKED
 }

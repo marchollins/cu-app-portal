@@ -24,6 +24,11 @@ vi.mock("@/features/repositories/actions", () => ({
   saveGitHubUsernameAndGrantAccessAction: vi.fn(),
 }));
 
+vi.mock("@/features/repository-imports/actions", () => ({
+  prepareExistingAppAction: vi.fn(),
+  verifyExistingAppPreparationAction: vi.fn(),
+}));
+
 vi.mock("@/lib/db", () => ({
   prisma: {
     user: {
@@ -110,6 +115,324 @@ describe("MyAppsPage", () => {
     expect(
       screen.getByRole("button", { name: /retry publish/i }),
     ).toBeInTheDocument();
+    expect(prisma.appRequest.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          repositoryImport: true,
+        }),
+      }),
+    );
+  });
+
+  it("hides publish actions for unprepared imported apps", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
+      {
+        id: "req_import",
+        appName: "Campus Dashboard",
+        generationStatus: "SUCCEEDED",
+        sourceOfTruth: "IMPORTED_REPOSITORY",
+        repositoryStatus: "READY",
+        repositoryAccessStatus: "GRANTED",
+        repositoryAccessNote: null,
+        publishStatus: "NOT_STARTED",
+        repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
+        publishUrl: null,
+        primaryPublishUrl: null,
+        azureWebAppName: null,
+        azureDatabaseName: null,
+        repositoryImport: {
+          sourceRepositoryUrl: "https://github.com/cedarville-it/source-dashboard",
+          importStatus: "SUCCEEDED",
+          compatibilityStatus: "NEEDS_ADDITIONS",
+          preparationStatus: "PENDING_USER_CHOICE",
+        },
+        publishAttempts: [],
+      },
+    ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(await MyAppsPage());
+
+    expect(
+      screen.getByText(
+        /azure publishing unavailable until repository preparation is committed/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /publish to azure/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /retry publish/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows import failure details for blocked imported apps", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
+      {
+        id: "req_import_failed",
+        appName: "External Dashboard",
+        generationStatus: "SUCCEEDED",
+        sourceOfTruth: "IMPORTED_REPOSITORY",
+        repositoryStatus: "FAILED",
+        repositoryAccessStatus: "NOT_REQUESTED",
+        repositoryAccessNote: null,
+        publishStatus: "NOT_STARTED",
+        repositoryUrl: null,
+        repositoryOwner: "cedarville-it",
+        repositoryName: "external-dashboard",
+        publishUrl: null,
+        primaryPublishUrl: null,
+        azureWebAppName: null,
+        azureDatabaseName: null,
+        repositoryImport: {
+          sourceRepositoryUrl: "https://github.com/example/external-dashboard",
+          importStatus: "FAILED",
+          importErrorSummary:
+            "Repository import failed while cloning source repository: fatal: repository not found",
+          compatibilityStatus: "NOT_SCANNED",
+          preparationStatus: "BLOCKED",
+        },
+        publishAttempts: [],
+      },
+    ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(await MyAppsPage());
+
+    expect(screen.getByText("Import: failed")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Import error: Repository import failed while cloning source repository: fatal: repository not found",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Preparation: blocked")).toBeInTheDocument();
+  });
+
+  it("shows imported repository status and preparation choices", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
+      {
+        id: "req_import_choice",
+        appName: "Imported Dashboard",
+        generationStatus: "SUCCEEDED",
+        sourceOfTruth: "IMPORTED_REPOSITORY",
+        repositoryStatus: "READY",
+        repositoryAccessStatus: "GRANTED",
+        repositoryAccessNote: null,
+        publishStatus: "NOT_STARTED",
+        repositoryUrl: "https://github.com/cedarville-it/imported-dashboard",
+        repositoryOwner: "cedarville-it",
+        repositoryName: "imported-dashboard",
+        publishUrl: null,
+        primaryPublishUrl: null,
+        azureWebAppName: null,
+        azureDatabaseName: null,
+        repositoryImport: {
+          sourceRepositoryUrl: "https://github.com/example/source-dashboard",
+          importStatus: "SUCCEEDED",
+          compatibilityStatus: "NEEDS_ADDITIONS",
+          preparationStatus: "PENDING_USER_CHOICE",
+          preparationPullRequestUrl:
+            "https://github.com/cedarville-it/imported-dashboard/pull/42",
+          preparationErrorSummary: "Could not update workflow file.",
+        },
+        publishAttempts: [],
+      },
+      {
+        id: "req_generated",
+        appName: "Generated Dashboard",
+        generationStatus: "SUCCEEDED",
+        sourceOfTruth: "PORTAL_MANAGED_REPO",
+        repositoryStatus: "READY",
+        repositoryAccessStatus: "GRANTED",
+        repositoryAccessNote: null,
+        publishStatus: "NOT_STARTED",
+        repositoryUrl: "https://github.com/cedarville-it/generated-dashboard",
+        repositoryOwner: "cedarville-it",
+        repositoryName: "generated-dashboard",
+        publishUrl: null,
+        primaryPublishUrl: null,
+        azureWebAppName: null,
+        azureDatabaseName: null,
+        repositoryImport: null,
+        publishAttempts: [],
+      },
+    ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    const { container } = render(await MyAppsPage());
+
+    const importedCard = screen
+      .getByRole("heading", { name: /imported dashboard/i })
+      .closest("li");
+    expect(importedCard).not.toBeNull();
+    expect(
+      within(importedCard as HTMLElement).getByText(/imported repository status/i),
+    ).toBeInTheDocument();
+    expect(
+      within(importedCard as HTMLElement).getByText(
+        "Source repo: https://github.com/example/source-dashboard",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(importedCard as HTMLElement).getByText("Import: succeeded"),
+    ).toBeInTheDocument();
+    expect(
+      within(importedCard as HTMLElement).getByText(
+        "Compatibility: needs additions",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(importedCard as HTMLElement).getByText(
+        "Preparation: pending user choice",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(importedCard as HTMLElement).getByRole("link", {
+        name: "https://github.com/cedarville-it/imported-dashboard/pull/42",
+      }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/cedarville-it/imported-dashboard/pull/42",
+    );
+    expect(
+      within(importedCard as HTMLElement).getByText(
+        "Preparation error: Could not update workflow file.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(importedCard as HTMLElement).getByRole("button", {
+        name: /commit azure publishing additions/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(importedCard as HTMLElement).getByRole("button", {
+        name: /open azure publishing pr/i,
+      }),
+    ).toBeInTheDocument();
+
+    const modeInputs = Array.from(
+      container.querySelectorAll('input[name="preparationMode"]'),
+    ).map((input) => (input as HTMLInputElement).value);
+    expect(modeInputs).toEqual(["DIRECT_COMMIT", "PULL_REQUEST"]);
+
+    const generatedCard = screen
+      .getByRole("heading", { name: /generated dashboard/i })
+      .closest("li");
+    expect(generatedCard).not.toBeNull();
+    expect(
+      within(generatedCard as HTMLElement).queryByText(
+        /imported repository status/i,
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      within(generatedCard as HTMLElement).queryByRole("button", {
+        name: /commit azure publishing additions/i,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows publish actions for committed imported apps", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
+      {
+        id: "req_import_ready",
+        appName: "Campus Dashboard",
+        generationStatus: "SUCCEEDED",
+        sourceOfTruth: "IMPORTED_REPOSITORY",
+        repositoryStatus: "READY",
+        repositoryAccessStatus: "GRANTED",
+        repositoryAccessNote: null,
+        publishStatus: "FAILED",
+        repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
+        publishUrl: null,
+        primaryPublishUrl: null,
+        azureWebAppName: null,
+        azureDatabaseName: null,
+        repositoryImport: {
+          sourceRepositoryUrl: "https://github.com/cedarville-it/source-dashboard",
+          importStatus: "SUCCEEDED",
+          compatibilityStatus: "COMPATIBLE",
+          preparationStatus: "COMMITTED",
+        },
+        publishAttempts: [],
+      },
+    ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(await MyAppsPage());
+
+    expect(
+      screen.getByRole("button", { name: /retry publish/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        /azure publishing unavailable until repository preparation is committed/i,
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a verification action for imported apps with opened preparation PRs", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
+      {
+        id: "req_import_pr",
+        appName: "Campus Dashboard",
+        generationStatus: "SUCCEEDED",
+        sourceOfTruth: "IMPORTED_REPOSITORY",
+        repositoryStatus: "READY",
+        repositoryAccessStatus: "GRANTED",
+        repositoryAccessNote: null,
+        publishStatus: "NOT_STARTED",
+        repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
+        publishUrl: null,
+        primaryPublishUrl: null,
+        azureWebAppName: null,
+        azureDatabaseName: null,
+        repositoryImport: {
+          sourceRepositoryUrl: "https://github.com/cedarville-it/source-dashboard",
+          importStatus: "SUCCEEDED",
+          compatibilityStatus: "NEEDS_ADDITIONS",
+          preparationStatus: "PULL_REQUEST_OPENED",
+          preparationPullRequestUrl:
+            "https://github.com/cedarville-it/campus-dashboard/pull/42",
+        },
+        publishAttempts: [],
+      },
+    ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(await MyAppsPage());
+
+    expect(
+      screen.getByRole("button", { name: /verify pr merge/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: /commit azure publishing additions/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /open azure publishing pr/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows Azure publish and workflow metadata for listed apps", async () => {

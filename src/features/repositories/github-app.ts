@@ -18,7 +18,14 @@ type CreateRepositoryInput = {
   visibility: GitHubRepoVisibility;
   files: Record<string, string>;
   defaultBranch: string;
+  autoInit?: boolean;
   reuseIfAlreadyExists?: boolean;
+};
+
+type UpdateRepositoryDefaultBranchInput = {
+  owner: string;
+  name: string;
+  defaultBranch: string;
 };
 
 type AddRepositoryCollaboratorInput = {
@@ -60,6 +67,45 @@ type GetWorkflowRunInput = {
   runId: string;
 };
 
+type GetRepositoryInput = {
+  owner: string;
+  name: string;
+};
+
+type ReadRepositoryTextFilesInput = {
+  owner: string;
+  name: string;
+  ref: string;
+  paths: string[];
+};
+
+type GetBranchHeadInput = {
+  owner: string;
+  name: string;
+  branch: string;
+};
+
+type CommitFilesInput = {
+  owner: string;
+  name: string;
+  branch: string;
+  message: string;
+  expectedHeadSha?: string;
+  files: Record<string, string>;
+};
+
+type CreatePullRequestWithFilesInput = {
+  owner: string;
+  name: string;
+  baseBranch: string;
+  branch: string;
+  title: string;
+  body: string;
+  message: string;
+  expectedHeadSha?: string;
+  files: Record<string, string>;
+};
+
 type GitHubBlobResponse = {
   sha: string;
 };
@@ -82,6 +128,15 @@ type GitHubRepositoryResponse = {
   owner: {
     login: string;
   };
+};
+
+type GitHubContentResponse = {
+  content: string;
+  encoding?: string;
+};
+
+type GitHubPullRequestResponse = {
+  html_url: string;
 };
 
 type GitHubRefResponse = {
@@ -113,9 +168,12 @@ type GitHubWorkflowRunResponse = {
 
 type GitHubApiError = Error & {
   status?: number;
+  errors?: unknown;
 };
 
 const GIT_REPO_INIT_RETRY_DELAYS_MS = [250, 500, 1000];
+const STALE_REPOSITORY_HEAD_ERROR =
+  "Repository changed while preparing Azure publishing additions. Please retry.";
 
 function base64UrlJson(value: unknown) {
   return Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -158,6 +216,14 @@ async function readJson<T>(response: Response): Promise<T> {
       }`,
     ) as GitHubApiError;
     error.status = response.status;
+    if (
+      responseJson &&
+      typeof responseJson === "object" &&
+      responseJson !== null &&
+      "errors" in responseJson
+    ) {
+      error.errors = responseJson.errors;
+    }
 
     throw error;
   }
@@ -184,6 +250,26 @@ async function requireGitHubStatus(response: Response, expectedStatuses: number[
 
 function githubPathSegment(value: string) {
   return encodeURIComponent(value);
+}
+
+function githubRefPath(...segments: string[]) {
+  return segments
+    .flatMap((segment) => segment.split("/"))
+    .map(githubPathSegment)
+    .join("/");
+}
+
+function decodeGitHubBase64Content(data: GitHubContentResponse) {
+  return Buffer.from(data.content.replaceAll(/\s/g, ""), "base64").toString("utf8");
+}
+
+function toRepositoryMetadata(repository: GitHubRepositoryResponse) {
+  return {
+    owner: repository.owner.login,
+    name: repository.name,
+    url: repository.html_url,
+    defaultBranch: repository.default_branch,
+  };
 }
 
 function isRetriableGitHubConflict(error: unknown) {
@@ -218,6 +304,93 @@ async function encryptGitHubSecret(publicKey: string, secretValue: string) {
   const encrypted = sodium.crypto_box_seal(binarySecret, binaryKey);
 
   return sodium.to_base64(encrypted, sodium.base64_variants.ORIGINAL);
+}
+
+async function createCommitFromFiles({
+  fetchImpl,
+  headers,
+  owner,
+  name,
+  branch,
+  message,
+  expectedHeadSha,
+  files,
+  parentSha: initialParentSha,
+}: CommitFilesInput & {
+  fetchImpl: FetchLike;
+  headers: Record<string, string>;
+  parentSha?: string;
+}) {
+  const encodedOwner = githubPathSegment(owner);
+  const encodedName = githubPathSegment(name);
+  const parentSha =
+    initialParentSha ??
+    (
+      await readJson<GitHubRefResponse>(
+        await fetchImpl(
+          `https://api.github.com/repos/${encodedOwner}/${encodedName}/git/ref/${githubRefPath("heads", branch)}`,
+          { method: "GET", headers },
+        ),
+      )
+    ).object.sha;
+
+  if (!initialParentSha && expectedHeadSha && parentSha !== expectedHeadSha) {
+    throw new Error(STALE_REPOSITORY_HEAD_ERROR);
+  }
+
+  const parentCommit = await readJson<GitHubCommitResponse & { tree: { sha: string } }>(
+    await fetchImpl(
+      `https://api.github.com/repos/${encodedOwner}/${encodedName}/git/commits/${githubPathSegment(parentSha)}`,
+      { method: "GET", headers },
+    ),
+  );
+  const tree = [];
+
+  for (const [filePath, content] of Object.entries(files)) {
+    const blob = await readJson<GitHubBlobResponse>(
+      await fetchImpl(
+        `https://api.github.com/repos/${encodedOwner}/${encodedName}/git/blobs`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ content, encoding: "utf-8" }),
+        },
+      ),
+    );
+    tree.push({ path: filePath, mode: "100644", type: "blob", sha: blob.sha });
+  }
+
+  const createdTree = await readJson<GitHubTreeResponse>(
+    await fetchImpl(`https://api.github.com/repos/${encodedOwner}/${encodedName}/git/trees`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ base_tree: parentCommit.tree.sha, tree }),
+    }),
+  );
+  const commit = await readJson<GitHubCommitResponse>(
+    await fetchImpl(`https://api.github.com/repos/${encodedOwner}/${encodedName}/git/commits`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        message,
+        tree: createdTree.sha,
+        parents: [parentSha],
+      }),
+    }),
+  );
+
+  await readJson<{ ref: string }>(
+    await fetchImpl(
+      `https://api.github.com/repos/${encodedOwner}/${encodedName}/git/refs/${githubRefPath("heads", branch)}`,
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ sha: commit.sha, force: false }),
+      },
+    ),
+  );
+
+  return { commitSha: commit.sha };
 }
 
 export function createGitHubAppClient({
@@ -257,12 +430,135 @@ export function createGitHubAppClient({
   }
 
   return {
+    async createInstallationTokenForGit() {
+      return createInstallationToken();
+    },
+    async getRepository({ owner, name }: GetRepositoryInput) {
+      const headers = await withInstallationHeaders();
+      const repository = await readJson<GitHubRepositoryResponse & { private?: boolean }>(
+        await fetchImpl(
+          `https://api.github.com/repos/${githubPathSegment(owner)}/${githubPathSegment(name)}`,
+          { method: "GET", headers },
+        ),
+      );
+
+      return {
+        owner: repository.owner.login,
+        name: repository.name,
+        url: repository.html_url,
+        defaultBranch: repository.default_branch,
+        private: Boolean(repository.private),
+      };
+    },
+    async readRepositoryTextFiles({
+      owner,
+      name,
+      ref,
+      paths,
+    }: ReadRepositoryTextFilesInput) {
+      const headers = await withInstallationHeaders();
+      const encodedOwner = githubPathSegment(owner);
+      const encodedName = githubPathSegment(name);
+      const files: Record<string, string> = {};
+
+      for (const path of paths) {
+        const response = await fetchImpl(
+          `https://api.github.com/repos/${encodedOwner}/${encodedName}/contents/${path.split("/").map(githubPathSegment).join("/")}?ref=${encodeURIComponent(ref)}`,
+          { method: "GET", headers },
+        );
+
+        if (response.status === 404) {
+          continue;
+        }
+
+        const content = await readJson<GitHubContentResponse>(response);
+        files[path] = decodeGitHubBase64Content(content);
+      }
+
+      return files;
+    },
+    async getBranchHead({ owner, name, branch }: GetBranchHeadInput) {
+      const headers = await withInstallationHeaders();
+      const encodedOwner = githubPathSegment(owner);
+      const encodedName = githubPathSegment(name);
+      const ref = await readJson<GitHubRefResponse>(
+        await fetchImpl(
+          `https://api.github.com/repos/${encodedOwner}/${encodedName}/git/ref/${githubRefPath("heads", branch)}`,
+          { method: "GET", headers },
+        ),
+      );
+
+      return { sha: ref.object.sha };
+    },
+    async commitFiles(input: CommitFilesInput) {
+      const headers = await withInstallationHeaders();
+
+      return createCommitFromFiles({ ...input, fetchImpl, headers });
+    },
+    async createPullRequestWithFiles(input: CreatePullRequestWithFilesInput) {
+      const headers = await withInstallationHeaders();
+      const encodedOwner = githubPathSegment(input.owner);
+      const encodedName = githubPathSegment(input.name);
+      const baseRef = await readJson<GitHubRefResponse>(
+        await fetchImpl(
+          `https://api.github.com/repos/${encodedOwner}/${encodedName}/git/ref/${githubRefPath("heads", input.baseBranch)}`,
+          { method: "GET", headers },
+        ),
+      );
+
+      if (
+        input.expectedHeadSha &&
+        baseRef.object.sha !== input.expectedHeadSha
+      ) {
+        throw new Error(STALE_REPOSITORY_HEAD_ERROR);
+      }
+
+      await readJson<{ ref: string }>(
+        await fetchImpl(`https://api.github.com/repos/${encodedOwner}/${encodedName}/git/refs`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            ref: `refs/heads/${input.branch}`,
+            sha: baseRef.object.sha,
+          }),
+        }),
+      );
+
+      const commit = await createCommitFromFiles({
+        owner: input.owner,
+        name: input.name,
+        branch: input.branch,
+        message: input.message,
+        files: input.files,
+        fetchImpl,
+        headers,
+        parentSha: baseRef.object.sha,
+      });
+      const pullRequest = await readJson<GitHubPullRequestResponse>(
+        await fetchImpl(`https://api.github.com/repos/${encodedOwner}/${encodedName}/pulls`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            title: input.title,
+            body: input.body,
+            head: input.branch,
+            base: input.baseBranch,
+          }),
+        }),
+      );
+
+      return {
+        commitSha: commit.commitSha,
+        pullRequestUrl: pullRequest.html_url,
+      };
+    },
     async createRepository({
       owner,
       name,
       visibility,
       files,
       defaultBranch,
+      autoInit = true,
       reuseIfAlreadyExists = false,
     }: CreateRepositoryInput) {
       const headers = await withInstallationHeaders();
@@ -274,7 +570,7 @@ export function createGitHubAppClient({
           body: JSON.stringify({
             name,
             visibility,
-            auto_init: true,
+            auto_init: autoInit,
           }),
         },
       );
@@ -305,6 +601,10 @@ export function createGitHubAppClient({
         } catch {
           throw error;
         }
+      }
+
+      if (!autoInit) {
+        return toRepositoryMetadata(repository);
       }
 
       let updatedRepository: GitHubRepositoryResponse | null = null;
@@ -412,12 +712,26 @@ export function createGitHubAppClient({
         throw new Error("GitHub repository initialization did not complete.");
       }
 
-      return {
-        owner: updatedRepository.owner.login,
-        name: updatedRepository.name,
-        url: updatedRepository.html_url,
-        defaultBranch: updatedRepository.default_branch,
-      };
+      return toRepositoryMetadata(updatedRepository);
+    },
+    async updateRepositoryDefaultBranch({
+      owner,
+      name,
+      defaultBranch,
+    }: UpdateRepositoryDefaultBranchInput) {
+      const headers = await withInstallationHeaders();
+      const repository = await readJson<GitHubRepositoryResponse>(
+        await fetchImpl(
+          `https://api.github.com/repos/${githubPathSegment(owner)}/${githubPathSegment(name)}`,
+          {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ default_branch: defaultBranch }),
+          },
+        ),
+      );
+
+      return toRepositoryMetadata(repository);
     },
     async addRepositoryCollaborator({
       owner,

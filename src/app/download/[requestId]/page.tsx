@@ -10,6 +10,10 @@ import {
   retryRepositoryBootstrapAction,
   saveGitHubUsernameAndGrantAccessAction,
 } from "@/features/repositories/actions";
+import {
+  prepareExistingAppAction,
+  verifyExistingAppPreparationAction,
+} from "@/features/repository-imports/actions";
 import { PendingSubmitButton } from "@/features/forms/pending-submit-button";
 import { buildCodexHandoffPrompt } from "@/features/repositories/codex-handoff";
 import { CopyCodexHandoffButton } from "@/features/repositories/copy-codex-handoff-button";
@@ -23,11 +27,16 @@ type BadgeVariant = "success" | "error" | "warning" | "info" | "default";
 
 function publishBadge(status: string): { label: string; variant: BadgeVariant } {
   switch (status) {
-    case "SUCCEEDED": return { label: "Published", variant: "success" };
-    case "FAILED": return { label: "Failed", variant: "error" };
-    case "IN_PROGRESS": return { label: "In progress", variant: "info" };
-    case "DELETED": return { label: "Deleted", variant: "default" };
-    default: return { label: formatStatus(status), variant: "default" };
+    case "SUCCEEDED":
+      return { label: "Published", variant: "success" };
+    case "FAILED":
+      return { label: "Failed", variant: "error" };
+    case "IN_PROGRESS":
+      return { label: "In progress", variant: "info" };
+    case "DELETED":
+      return { label: "Deleted", variant: "default" };
+    default:
+      return { label: formatStatus(status), variant: "default" };
   }
 }
 
@@ -38,7 +47,126 @@ function getDisplayPublishUrl(
   return publishUrl ?? primaryPublishUrl;
 }
 
-function renderPublishAction(requestId: string, publishStatus: string, repositoryStatus: string) {
+const PREPARATION_REQUIRED_MESSAGE =
+  "Azure publishing unavailable until repository preparation is committed.";
+
+function isImportedRepositoryPrepared(
+  sourceOfTruth: string,
+  preparationStatus: string | null | undefined,
+) {
+  return (
+    sourceOfTruth !== "IMPORTED_REPOSITORY" || preparationStatus === "COMMITTED"
+  );
+}
+
+function renderImportedRepositoryStatus({
+  requestId,
+  repositoryImport,
+}: {
+  requestId: string;
+  repositoryImport: {
+    sourceRepositoryUrl?: string | null;
+    importStatus?: string | null;
+    importErrorSummary?: string | null;
+    compatibilityStatus?: string | null;
+    preparationStatus?: string | null;
+    preparationPullRequestUrl?: string | null;
+    preparationErrorSummary?: string | null;
+  } | null;
+}) {
+  if (!repositoryImport) {
+    return null;
+  }
+
+  const prepareAction = prepareExistingAppAction.bind(null, requestId);
+  const verifyAction = verifyExistingAppPreparationAction.bind(
+    null,
+    requestId,
+    undefined,
+  );
+
+  return (
+    <section
+      aria-label="Imported repository status"
+      className="card card--gold-border"
+    >
+      <p className="section-title">Imported Repository Status</p>
+      <div className="status-table" style={{ marginBottom: "1rem" }}>
+        {repositoryImport.sourceRepositoryUrl ? (
+          <p>Source repo: {repositoryImport.sourceRepositoryUrl}</p>
+        ) : null}
+        {repositoryImport.importStatus ? (
+          <p>Import: {formatStatus(repositoryImport.importStatus)}</p>
+        ) : null}
+        {repositoryImport.importErrorSummary ? (
+          <p>Import error: {repositoryImport.importErrorSummary}</p>
+        ) : null}
+        {repositoryImport.compatibilityStatus ? (
+          <p>
+            Compatibility: {formatStatus(repositoryImport.compatibilityStatus)}
+          </p>
+        ) : null}
+        {repositoryImport.preparationStatus ? (
+          <p>Preparation: {formatStatus(repositoryImport.preparationStatus)}</p>
+        ) : null}
+        {repositoryImport.preparationPullRequestUrl ? (
+          <p>
+            Preparation PR:{" "}
+            <a href={repositoryImport.preparationPullRequestUrl}>
+              {repositoryImport.preparationPullRequestUrl}
+            </a>
+          </p>
+        ) : null}
+        {repositoryImport.preparationErrorSummary ? (
+          <p>Preparation error: {repositoryImport.preparationErrorSummary}</p>
+        ) : null}
+      </div>
+      {repositoryImport.preparationStatus === "PENDING_USER_CHOICE" ? (
+        <div
+          style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}
+        >
+          <form action={prepareAction}>
+            <input
+              name="preparationMode"
+              type="hidden"
+              value="DIRECT_COMMIT"
+            />
+            <button type="submit" className="btn btn--primary-solid btn--sm">
+              Commit Azure Publishing Additions
+            </button>
+          </form>
+          <form action={prepareAction}>
+            <input name="preparationMode" type="hidden" value="PULL_REQUEST" />
+            <button type="submit" className="btn btn--ghost btn--sm">
+              Open Azure Publishing PR
+            </button>
+          </form>
+        </div>
+      ) : null}
+      {repositoryImport.preparationStatus === "PULL_REQUEST_OPENED" ? (
+        <form action={verifyAction}>
+          <button type="submit" className="btn btn--ghost btn--sm">
+            Verify PR Merge
+          </button>
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
+function renderPublishAction({
+  requestId,
+  publishStatus,
+  repositoryStatus,
+  sourceOfTruth,
+  preparationStatus,
+}: {
+  requestId: string;
+  publishStatus: string;
+  repositoryStatus: string;
+  sourceOfTruth: string;
+  preparationStatus: string | null | undefined;
+}) {
   if (repositoryStatus === "FAILED") {
     const retryAction = retryRepositoryBootstrapAction.bind(null, requestId);
     return (
@@ -54,6 +182,10 @@ function renderPublishAction(requestId: string, publishStatus: string, repositor
   }
 
   if (repositoryStatus !== "READY") return null;
+
+  if (!isImportedRepositoryPrepared(sourceOfTruth, preparationStatus)) {
+    return <p>{PREPARATION_REQUIRED_MESSAGE}</p>;
+  }
 
   if (publishStatus === "FAILED") {
     const retryAction = retryPublishAction.bind(null, requestId);
@@ -110,10 +242,17 @@ export default async function DownloadPage({
         orderBy: { createdAt: "desc" },
         take: 1,
       },
+      repositoryImport: true,
     },
   });
 
-  if (!appRequest?.artifact) {
+  if (!appRequest) {
+    notFound();
+  }
+
+  const isImportedApp = appRequest.sourceOfTruth === "IMPORTED_REPOSITORY";
+
+  if (!appRequest.artifact && !isImportedApp) {
     notFound();
   }
 
@@ -132,19 +271,39 @@ export default async function DownloadPage({
     <main>
       <nav aria-label="Breadcrumb" className="breadcrumb">
         <Link href="/">Home</Link>
-        <span className="breadcrumb__sep" aria-hidden="true">/</span>
+        <span className="breadcrumb__sep" aria-hidden="true">
+          /
+        </span>
         <Link href="/apps">My Apps</Link>
-        <span className="breadcrumb__sep" aria-hidden="true">/</span>
+        <span className="breadcrumb__sep" aria-hidden="true">
+          /
+        </span>
         <span aria-current="page">{appRequest.appName}</span>
       </nav>
 
-      <div className="page-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+      <div
+        className="page-header"
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "1rem",
+        }}
+      >
         <div>
-          <h1>Your App Is Ready</h1>
-          <p>{appRequest.appName} — Download the ZIP, set up Codex, and publish to Azure.</p>
+          <h1>{isImportedApp ? "Imported App Details" : "Your App Is Ready"}</h1>
+          <p>
+            {isImportedApp
+              ? `The portal tracks ${appRequest.appName} for Azure publishing.`
+              : `${appRequest.appName} — Download the ZIP, set up Codex, and publish to Azure.`}
+          </p>
         </div>
-        {appRequest.repositoryStatus === "FAILED" ? (
-          <Link href={`/api/download/${requestId}`} className="btn btn--secondary-solid">
+        {appRequest.repositoryStatus === "FAILED" && appRequest.artifact ? (
+          <Link
+            href={`/api/download/${requestId}`}
+            className="btn btn--secondary-solid"
+          >
             ⬇ Download ZIP
           </Link>
         ) : null}
@@ -161,7 +320,12 @@ export default async function DownloadPage({
                 <div className="status-row">
                   <span>
                     Managed repo ready:{" "}
-                    <a href={appRequest.repositoryUrl} target="_blank" rel="noreferrer" className="meta-link">
+                    <a
+                      href={appRequest.repositoryUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="meta-link"
+                    >
                       {appRequest.repositoryUrl}
                     </a>
                   </span>
@@ -177,14 +341,19 @@ export default async function DownloadPage({
             </>
           ) : appRequest.repositoryStatus === "FAILED" ? (
             <div className="error-box">
-              Repo setup failed. The ZIP is still available. An operator may need to
-              fix the GitHub App or org configuration before portal publishing can continue.
+              Repo setup failed.
+              {appRequest.artifact ? " The ZIP is still available." : ""} An
+              operator may need to fix the GitHub App or org configuration before
+              portal publishing can continue.
             </div>
           ) : (
-            <div className="info-box">Managed repo setup in progress — check back shortly.</div>
+            <div className="info-box">
+              Managed repo setup in progress — check back shortly.
+            </div>
           )}
 
-          {appRequest.publishErrorSummary && appRequest.repositoryStatus === "FAILED" ? (
+          {appRequest.publishErrorSummary &&
+          appRequest.repositoryStatus === "FAILED" ? (
             <div className="warning-box" style={{ marginTop: "0.75rem" }}>
               Repo setup note: {appRequest.publishErrorSummary}
             </div>
@@ -197,25 +366,48 @@ export default async function DownloadPage({
             <p className="section-title">GitHub Access for Codex</p>
             {appRequest.repositoryAccessStatus === "GRANTED" ? (
               <div className="success-box">
-                Repo access granted{currentUser?.githubUsername ? ` for @${currentUser.githubUsername}` : ""}.
+                Repo access granted
+                {currentUser?.githubUsername
+                  ? ` for @${currentUser.githubUsername}`
+                  : ""}
+                .
               </div>
             ) : (
               <>
-                <p style={{ fontSize: "0.9375rem", marginBottom: "0.875rem" }}>
+                <p
+                  style={{
+                    fontSize: "0.9375rem",
+                    marginBottom: "0.875rem",
+                  }}
+                >
                   Need Codex access to this repo?{" "}
-                  <a href="https://github.com/signup" target="_blank" rel="noreferrer">
+                  <a
+                    href="https://github.com/signup"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     Create a GitHub account
                   </a>
                   , then enter your username so the portal can invite you.
                 </p>
                 {appRequest.repositoryAccessNote ? (
-                  <div className="warning-box" style={{ marginBottom: "0.875rem" }}>
+                  <div
+                    className="warning-box"
+                    style={{ marginBottom: "0.875rem" }}
+                  >
                     {appRequest.repositoryAccessNote}
                   </div>
                 ) : null}
                 <form
-                  action={saveGitHubUsernameAndGrantAccessAction.bind(null, requestId)}
-                  style={{ display: "flex", gap: "0.625rem", flexWrap: "wrap" }}
+                  action={saveGitHubUsernameAndGrantAccessAction.bind(
+                    null,
+                    requestId,
+                  )}
+                  style={{
+                    display: "flex",
+                    gap: "0.625rem",
+                    flexWrap: "wrap",
+                  }}
                 >
                   <input
                     name="githubUsername"
@@ -226,7 +418,10 @@ export default async function DownloadPage({
                     className="form-control"
                     style={{ maxWidth: "240px" }}
                   />
-                  <button type="submit" className="btn btn--secondary-solid">
+                  <button
+                    type="submit"
+                    className="btn btn--secondary-solid"
+                  >
                     {appRequest.repositoryAccessStatus === "INVITED"
                       ? "Resend Repo Access Invite"
                       : "Grant Repo Access"}
@@ -237,16 +432,33 @@ export default async function DownloadPage({
           </div>
         ) : null}
 
+        {/* Imported repository status section */}
+        {isImportedApp
+          ? renderImportedRepositoryStatus({
+              requestId,
+              repositoryImport: appRequest.repositoryImport,
+            })
+          : null}
+
         {/* Codex workflow steps */}
-        <div className="card">
-          <p className="section-title">Codex Workflow</p>
-          <ol className="step-list">
-            <li>Open the managed repo locally in Codex on your machine.</li>
-            <li>Let Codex clone, customize, commit, and push your changes.</li>
-            <li>Return here when the repo is ready to publish to Azure.</li>
-            <li>Use portal publishing instead of setting up Azure tooling locally.</li>
-          </ol>
-        </div>
+        {!isImportedApp ? (
+          <div className="card">
+            <p className="section-title">Codex Workflow</p>
+            <ol className="step-list">
+              <li>Open the managed repo locally in Codex on your machine.</li>
+              <li>
+                Let Codex clone, customize, commit, and push your changes.
+              </li>
+              <li>
+                Return here when the repo is ready to publish to Azure.
+              </li>
+              <li>
+                Use portal publishing instead of setting up Azure tooling
+                locally.
+              </li>
+            </ol>
+          </div>
+        ) : null}
 
         {/* Publish section */}
         <div className="card card--navy-border">
@@ -254,7 +466,9 @@ export default async function DownloadPage({
           <div className="status-table" style={{ marginBottom: "1rem" }}>
             <div className="status-row">
               <span className="status-row__label">Status</span>
-              <span className={`badge badge--${pub.variant}`}>{pub.label}</span>
+              <span className={`badge badge--${pub.variant}`}>
+                {pub.label}
+              </span>
             </div>
             {appRequest.azureWebAppName ? (
               <div className="status-row">
@@ -263,32 +477,60 @@ export default async function DownloadPage({
             ) : null}
             {displayPublishUrl ? (
               <div className="status-row">
-                <a href={displayPublishUrl} target="_blank" rel="noreferrer" className="meta-link">
+                <a
+                  href={displayPublishUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="meta-link"
+                >
                   {displayPublishUrl}
                 </a>
               </div>
             ) : null}
             {appRequest.publishAttempts[0]?.githubWorkflowRunUrl ? (
               <div className="status-row">
-                <a href={appRequest.publishAttempts[0].githubWorkflowRunUrl} target="_blank" rel="noreferrer" className="meta-link">
+                <a
+                  href={
+                    appRequest.publishAttempts[0].githubWorkflowRunUrl
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="meta-link"
+                >
                   GitHub workflow
                 </a>
               </div>
             ) : null}
           </div>
 
-          {appRequest.publishErrorSummary && appRequest.repositoryStatus !== "FAILED" ? (
-            <div className="warning-box" style={{ marginBottom: "0.875rem" }}>
+          {appRequest.publishErrorSummary &&
+          appRequest.repositoryStatus !== "FAILED" ? (
+            <div
+              className="warning-box"
+              style={{ marginBottom: "0.875rem" }}
+            >
               Last publish note: {appRequest.publishErrorSummary}
             </div>
           ) : null}
 
-          {renderPublishAction(requestId, appRequest.publishStatus, appRequest.repositoryStatus)}
+          {renderPublishAction({
+            requestId,
+            publishStatus: appRequest.publishStatus,
+            repositoryStatus: appRequest.repositoryStatus,
+            sourceOfTruth: appRequest.sourceOfTruth,
+            preparationStatus: appRequest.repositoryImport?.preparationStatus,
+          })}
         </div>
 
       </div>
 
-      <div style={{ marginTop: "1.5rem", fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+      <div
+        style={{
+          marginTop: "1.5rem",
+          fontSize: "0.875rem",
+          color: "var(--text-secondary)",
+        }}
+      >
         Need to revisit this later? Go to <Link href="/apps">My Apps</Link>.
       </div>
     </main>

@@ -14,7 +14,24 @@ export default function HomePage() {
           <Link href="/create" className="btn btn--secondary-solid btn--lg">
             Create New App
           </Link>
-          <Link href="/apps" className="btn btn--ghost btn--lg" style={{ color: "rgba(255,255,255,0.85)", borderColor: "rgba(255,255,255,0.3)" }}>
+          <Link
+            href="/apps/add"
+            className="btn btn--ghost btn--lg"
+            style={{
+              color: "rgba(255,255,255,0.85)",
+              borderColor: "rgba(255,255,255,0.3)",
+            }}
+          >
+            Add Existing App
+          </Link>
+          <Link
+            href="/apps"
+            className="btn btn--ghost btn--lg"
+            style={{
+              color: "rgba(255,255,255,0.85)",
+              borderColor: "rgba(255,255,255,0.3)",
+            }}
+          >
             My Apps
           </Link>
         </div>

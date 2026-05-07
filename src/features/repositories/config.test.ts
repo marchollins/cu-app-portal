@@ -47,4 +47,19 @@ describe("loadGitHubAppConfig", () => {
       }),
     ).toThrow(/GITHUB_APP_INSTALLATIONS_JSON must be valid JSON/i);
   });
+
+  it("returns the configured installation id for an org", () => {
+    const config = loadGitHubAppConfig({
+      GITHUB_APP_ID: "123",
+      GITHUB_APP_PRIVATE_KEY: "key",
+      GITHUB_ALLOWED_ORGS: "cedarville-it",
+      GITHUB_DEFAULT_ORG: "cedarville-it",
+      GITHUB_APP_INSTALLATIONS_JSON: JSON.stringify({
+        "cedarville-it": "111",
+        "student-org": "222",
+      }),
+    });
+
+    expect(config.installationIdsByOrg["student-org"]).toBe("222");
+  });
 });
