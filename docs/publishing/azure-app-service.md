@@ -82,8 +82,8 @@ If `gh` is authenticated, you can wire the Azure identity secrets without openin
 
 ```bash
 gh secret set AZURE_CLIENT_ID --body "replace-me"
-gh secret set AZURE_TENANT_ID --body "81c32413-015d-4ba8-a93b-e1c28e355738"
-gh secret set AZURE_SUBSCRIPTION_ID --body "33e13fd4-7e2f-4be5-a1ec-c4ae6e1c1ecc"
+gh secret set AZURE_TENANT_ID --body "replace-me"
+gh secret set AZURE_SUBSCRIPTION_ID --body "replace-me"
 ```
 
 Then trigger the workflow:
