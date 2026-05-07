@@ -754,7 +754,7 @@ describe("repository import actions", () => {
     expect(prisma.repositoryImport.updateMany).toHaveBeenCalledWith({
       where: {
         id: "import_123",
-        preparationStatus: "PENDING_USER_CHOICE",
+        preparationStatus: { in: ["PENDING_USER_CHOICE", "FAILED"] },
       },
       data: {
         preparationMode: "DIRECT_COMMIT",
@@ -768,6 +768,71 @@ describe("repository import actions", () => {
         preparationMode: "DIRECT_COMMIT",
         preparationStatus: "COMMITTED",
         preparationPullRequestUrl: null,
+        preparationErrorSummary: null,
+      }),
+    });
+  });
+
+  it("retries a failed imported app preparation", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_retry_preparation",
+      userId: "user-123",
+      appName: "Campus Dashboard",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      repositoryImport: {
+        id: "import_retry_preparation",
+        preparationMode: "PULL_REQUEST",
+        preparationStatus: "FAILED",
+        preparationErrorSummary: "GitHub API rate limit exceeded.",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prepareImportedRepository).mockResolvedValue({
+      status: "PULL_REQUEST_OPENED",
+      commitSha: "commit-sha",
+      pullRequestUrl: "https://github.com/cedarville-it/campus-dashboard/pull/7",
+    });
+
+    const formData = new FormData();
+    formData.set("preparationMode", "PULL_REQUEST");
+
+    await prepareExistingAppAction("req_retry_preparation", formData, {
+      github: {
+        getBranchHead: vi.fn(),
+        readRepositoryTextFiles: vi.fn(),
+        commitFiles: vi.fn(),
+        createPullRequestWithFiles: vi.fn(),
+      },
+    });
+
+    expect(prisma.repositoryImport.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "import_retry_preparation",
+        preparationStatus: { in: ["PENDING_USER_CHOICE", "FAILED"] },
+      },
+      data: {
+        preparationMode: "PULL_REQUEST",
+        preparationStatus: "RUNNING",
+        preparationErrorSummary: null,
+      },
+    });
+    expect(prepareImportedRepository).toHaveBeenCalledWith({
+      appName: "Campus Dashboard",
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      defaultBranch: "main",
+      mode: "PULL_REQUEST",
+      github: expect.any(Object),
+    });
+    expect(prisma.repositoryImport.update).toHaveBeenCalledWith({
+      where: { id: "import_retry_preparation" },
+      data: expect.objectContaining({
+        preparationMode: "PULL_REQUEST",
+        preparationStatus: "PULL_REQUEST_OPENED",
+        preparationPullRequestUrl:
+          "https://github.com/cedarville-it/campus-dashboard/pull/7",
         preparationErrorSummary: null,
       }),
     });
@@ -910,7 +975,7 @@ describe("repository import actions", () => {
     expect(prisma.repositoryImport.updateMany).toHaveBeenCalledWith({
       where: {
         id: "import_stale",
-        preparationStatus: "PENDING_USER_CHOICE",
+        preparationStatus: { in: ["PENDING_USER_CHOICE", "FAILED"] },
       },
       data: {
         preparationMode: "DIRECT_COMMIT",

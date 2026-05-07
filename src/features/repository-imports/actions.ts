@@ -456,7 +456,7 @@ export async function prepareExistingAppAction(
   const runningImport = await prisma.repositoryImport.updateMany({
     where: {
       id: appRequest.repositoryImport.id,
-      preparationStatus: "PENDING_USER_CHOICE",
+      preparationStatus: { in: ["PENDING_USER_CHOICE", "FAILED"] },
     },
     data: {
       preparationMode: mode,

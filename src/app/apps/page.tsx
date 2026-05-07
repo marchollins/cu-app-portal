@@ -157,6 +157,7 @@ function renderImportedRepositoryStatus(request: {
     importStatus: string;
     importErrorSummary?: string | null;
     compatibilityStatus: string;
+    preparationMode?: string | null;
     preparationStatus: string;
     preparationPullRequestUrl?: string | null;
     preparationErrorSummary?: string | null;
@@ -177,6 +178,14 @@ function renderImportedRepositoryStatus(request: {
   const hasPublishingFileConflict =
     repositoryImport.preparationStatus === "BLOCKED" &&
     repositoryImport.compatibilityStatus === "CONFLICTED";
+  const retryPreparationMode =
+    repositoryImport.preparationMode === "DIRECT_COMMIT" ||
+    repositoryImport.preparationMode === "PULL_REQUEST"
+      ? repositoryImport.preparationMode
+      : null;
+  const canRetryPreparation =
+    repositoryImport.preparationStatus === "FAILED" &&
+    retryPreparationMode !== null;
   const canVerifyReadiness =
     repositoryImport.preparationStatus === "PULL_REQUEST_OPENED" ||
     hasPublishingFileConflict;
@@ -235,6 +244,22 @@ function renderImportedRepositoryStatus(request: {
             />
           </form>
         </div>
+      ) : null}
+      {canRetryPreparation ? (
+        <form action={prepareAction} style={{ marginTop: "0.75rem" }}>
+          <input
+            name="preparationMode"
+            type="hidden"
+            value={retryPreparationMode ?? ""}
+          />
+          <PendingSubmitButton
+            idleLabel="Retry Azure Publishing Preparation"
+            pendingLabel="Retrying Azure Publishing Preparation..."
+            statusText="Retrying Azure publishing preparation. This can take a moment."
+            variant="primary-solid"
+            size="sm"
+          />
+        </form>
       ) : null}
       {canVerifyReadiness ? (
         <form action={verifyAction} style={{ marginTop: "0.75rem" }}>

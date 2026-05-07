@@ -290,6 +290,62 @@ describe("DownloadPage", () => {
     );
   });
 
+  it("shows a retry action for failed imported app preparation", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_import_preparation_failed",
+      appName: "Campus Dashboard",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      repositoryStatus: "READY",
+      repositoryAccessStatus: "GRANTED",
+      repositoryAccessNote: null,
+      repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+      publishStatus: "NOT_STARTED",
+      publishUrl: null,
+      primaryPublishUrl: null,
+      azureWebAppName: null,
+      publishErrorSummary: null,
+      repositoryImport: {
+        sourceRepositoryUrl: "https://github.com/example/campus-dashboard",
+        importStatus: "SUCCEEDED",
+        compatibilityStatus: "NEEDS_ADDITIONS",
+        preparationMode: "PULL_REQUEST",
+        preparationStatus: "FAILED",
+        preparationErrorSummary: "GitHub API rate limit exceeded.",
+      },
+      artifact: null,
+      publishAttempts: [],
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    const { container } = render(
+      await DownloadPage({
+        params: Promise.resolve({ requestId: "req_import_preparation_failed" }),
+      }),
+    );
+
+    const importedStatus = screen.getByRole("region", {
+      name: /imported repository status/i,
+    });
+    expect(
+      within(importedStatus).getByText(
+        "Preparation error: GitHub API rate limit exceeded.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(importedStatus).getByRole("button", {
+        name: /retry azure publishing preparation/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      Array.from(container.querySelectorAll('input[name="preparationMode"]')).map(
+        (input) => (input as HTMLInputElement).value,
+      ),
+    ).toEqual(["PULL_REQUEST"]);
+  });
+
   it("shows publish actions for committed imported apps", async () => {
     vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
