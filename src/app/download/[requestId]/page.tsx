@@ -84,6 +84,12 @@ function renderImportedRepositoryStatus({
     requestId,
     undefined,
   );
+  const hasPublishingFileConflict =
+    repositoryImport.preparationStatus === "BLOCKED" &&
+    repositoryImport.compatibilityStatus === "CONFLICTED";
+  const canVerifyReadiness =
+    repositoryImport.preparationStatus === "PULL_REQUEST_OPENED" ||
+    hasPublishingFileConflict;
 
   return (
     <section
@@ -121,6 +127,12 @@ function renderImportedRepositoryStatus({
           <p>Preparation error: {repositoryImport.preparationErrorSummary}</p>
         ) : null}
       </div>
+      {hasPublishingFileConflict ? (
+        <div className="warning-box" style={{ marginBottom: "1rem" }}>
+          The portal will not overwrite existing publishing files. Continue in
+          Codex to inspect and merge them, then verify readiness here.
+        </div>
+      ) : null}
       {repositoryImport.preparationStatus === "PENDING_USER_CHOICE" ? (
         <div
           style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}
@@ -131,23 +143,39 @@ function renderImportedRepositoryStatus({
               type="hidden"
               value="DIRECT_COMMIT"
             />
-            <button type="submit" className="btn btn--primary-solid btn--sm">
-              Commit Azure Publishing Additions
-            </button>
+            <PendingSubmitButton
+              idleLabel="Commit Azure Publishing Additions"
+              pendingLabel="Committing Azure Publishing Additions..."
+              statusText="Committing Azure publishing additions. This can take a moment."
+              variant="primary-solid"
+              size="sm"
+            />
           </form>
           <form action={prepareAction}>
             <input name="preparationMode" type="hidden" value="PULL_REQUEST" />
-            <button type="submit" className="btn btn--ghost btn--sm">
-              Open Azure Publishing PR
-            </button>
+            <PendingSubmitButton
+              idleLabel="Open Azure Publishing PR"
+              pendingLabel="Opening Azure Publishing PR..."
+              statusText="Opening Azure publishing pull request. This can take a moment."
+              variant="ghost"
+              size="sm"
+            />
           </form>
         </div>
       ) : null}
-      {repositoryImport.preparationStatus === "PULL_REQUEST_OPENED" ? (
+      {canVerifyReadiness ? (
         <form action={verifyAction}>
-          <button type="submit" className="btn btn--ghost btn--sm">
-            Verify PR Merge
-          </button>
+          <PendingSubmitButton
+            idleLabel={
+              hasPublishingFileConflict
+                ? "Verify Repository Readiness"
+                : "Verify PR Merge"
+            }
+            pendingLabel="Verifying Readiness..."
+            statusText="Checking the default branch for required publishing files."
+            variant="ghost"
+            size="sm"
+          />
         </form>
       ) : null}
     </section>

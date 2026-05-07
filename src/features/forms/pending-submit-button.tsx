@@ -8,20 +8,29 @@ export function PendingSubmitButton({
   pendingLabel,
   statusText,
   variant = "primary-solid",
+  size,
 }: {
   idleLabel: string;
   pendingLabel: string;
   statusText: string;
-  variant?: "primary-solid" | "secondary-solid" | "primary" | "secondary";
+  variant?:
+    | "primary-solid"
+    | "secondary-solid"
+    | "primary"
+    | "secondary"
+    | "danger"
+    | "ghost";
+  size?: "sm" | "lg";
 }) {
   const { pending } = useFormStatus();
+  const sizeClass = size ? ` btn--${size}` : "";
 
   return (
     <>
       <button
         type="submit"
         disabled={pending}
-        className={`btn btn--${variant}`}
+        className={`btn btn--${variant}${sizeClass}`}
       >
         {pending ? (
           <>

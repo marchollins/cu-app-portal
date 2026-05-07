@@ -1,13 +1,23 @@
 import React from "react";
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AddExistingAppPage from "./page";
 
+const mockUseFormStatus = vi.hoisted(() => vi.fn());
 const mockRedirect = vi.hoisted(() =>
   vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
 );
+
+vi.mock("react-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-dom")>();
+
+  return {
+    ...actual,
+    useFormStatus: mockUseFormStatus,
+  };
+});
 
 vi.mock("next/navigation", () => ({
   redirect: mockRedirect,
@@ -50,6 +60,10 @@ function findElementByType(
 
   return null;
 }
+
+beforeEach(() => {
+  mockUseFormStatus.mockReturnValue({ pending: false });
+});
 
 afterEach(() => {
   cleanup();
@@ -121,5 +135,19 @@ describe("AddExistingAppPage", () => {
     );
     expect(addExistingAppAction).toHaveBeenCalledWith(formData);
     expect(mockRedirect).toHaveBeenCalledWith("/download/req_imported_app");
+  });
+
+  it("disables repository analysis and shows live status while pending", async () => {
+    mockUseFormStatus.mockReturnValue({ pending: true });
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+
+    render(await AddExistingAppPage());
+
+    expect(
+      screen.getByRole("button", { name: /analyzing repository/i }),
+    ).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /analyzing repository and preparing import/i,
+    );
   });
 });

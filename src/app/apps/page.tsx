@@ -174,6 +174,12 @@ function renderImportedRepositoryStatus(request: {
     request.id,
     undefined,
   );
+  const hasPublishingFileConflict =
+    repositoryImport.preparationStatus === "BLOCKED" &&
+    repositoryImport.compatibilityStatus === "CONFLICTED";
+  const canVerifyReadiness =
+    repositoryImport.preparationStatus === "PULL_REQUEST_OPENED" ||
+    hasPublishingFileConflict;
 
   return (
     <section aria-label="Imported repository status" style={{ marginTop: "1rem" }}>
@@ -200,27 +206,49 @@ function renderImportedRepositoryStatus(request: {
           <p>Preparation error: {repositoryImport.preparationErrorSummary}</p>
         ) : null}
       </div>
+      {hasPublishingFileConflict ? (
+        <div className="warning-box" style={{ marginTop: "0.75rem" }}>
+          The portal will not overwrite existing publishing files. Continue in
+          Codex to inspect and merge them, then verify readiness here.
+        </div>
+      ) : null}
       {repositoryImport.preparationStatus === "PENDING_USER_CHOICE" ? (
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
           <form action={prepareAction}>
             <input name="preparationMode" type="hidden" value="DIRECT_COMMIT" />
-            <button type="submit" className="btn btn--primary-solid btn--sm">
-              Commit Azure Publishing Additions
-            </button>
+            <PendingSubmitButton
+              idleLabel="Commit Azure Publishing Additions"
+              pendingLabel="Committing Azure Publishing Additions..."
+              statusText="Committing Azure publishing additions. This can take a moment."
+              variant="primary-solid"
+              size="sm"
+            />
           </form>
           <form action={prepareAction}>
             <input name="preparationMode" type="hidden" value="PULL_REQUEST" />
-            <button type="submit" className="btn btn--ghost btn--sm">
-              Open Azure Publishing PR
-            </button>
+            <PendingSubmitButton
+              idleLabel="Open Azure Publishing PR"
+              pendingLabel="Opening Azure Publishing PR..."
+              statusText="Opening Azure publishing pull request. This can take a moment."
+              variant="ghost"
+              size="sm"
+            />
           </form>
         </div>
       ) : null}
-      {repositoryImport.preparationStatus === "PULL_REQUEST_OPENED" ? (
+      {canVerifyReadiness ? (
         <form action={verifyAction} style={{ marginTop: "0.75rem" }}>
-          <button type="submit" className="btn btn--ghost btn--sm">
-            Verify PR Merge
-          </button>
+          <PendingSubmitButton
+            idleLabel={
+              hasPublishingFileConflict
+                ? "Verify Repository Readiness"
+                : "Verify PR Merge"
+            }
+            pendingLabel="Verifying Readiness..."
+            statusText="Checking the default branch for required publishing files."
+            variant="ghost"
+            size="sm"
+          />
         </form>
       ) : null}
     </section>
@@ -307,9 +335,13 @@ function renderDeletePanel(request: {
             I understand selected resources will be deleted.
           </label>
           <div>
-            <button type="submit" className="btn btn--danger btn--sm">
-              Delete Selected Resources
-            </button>
+            <PendingSubmitButton
+              idleLabel="Delete Selected Resources"
+              pendingLabel="Deleting Selected Resources..."
+              statusText="Deleting selected resources. This can take a moment."
+              variant="danger"
+              size="sm"
+            />
           </div>
         </form>
       </div>

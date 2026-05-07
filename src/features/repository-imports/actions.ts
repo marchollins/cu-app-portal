@@ -211,6 +211,17 @@ function summarizeError(error: unknown) {
   return error instanceof Error ? error.message : "unknown";
 }
 
+function isPublishingFileConflictError(error: unknown) {
+  return (
+    error instanceof Error &&
+    error.message.startsWith("Repository has publishing file conflicts.")
+  );
+}
+
+function buildPublishingFileConflictFeedback(message: string) {
+  return `${message} The portal will not overwrite existing publishing files. Continue in Codex to inspect and merge the existing publishing files, then return to verify readiness.`;
+}
+
 function getFailedTargetRepository({
   error,
   fallback,
@@ -416,6 +427,11 @@ function createDefaultPreparationGitHubClient(owner: string) {
   return createGitHubClientForOwner(owner);
 }
 
+function revalidateImportedRepositoryViews(requestId: string) {
+  revalidatePath("/apps");
+  revalidatePath(`/download/${requestId}`);
+}
+
 export async function prepareExistingAppAction(
   requestId: string,
   formData: FormData,
@@ -484,13 +500,19 @@ export async function prepareExistingAppAction(
       },
     );
   } catch (error) {
-    const message = summarizeError(error);
+    const isPublishingConflict = isPublishingFileConflictError(error);
+    const message = isPublishingConflict
+      ? buildPublishingFileConflictFeedback(summarizeError(error))
+      : summarizeError(error);
 
     await prisma.repositoryImport.update({
       where: { id: appRequest.repositoryImport.id },
       data: {
         preparationMode: mode,
-        preparationStatus: "FAILED",
+        ...(isPublishingConflict
+          ? { compatibilityStatus: "CONFLICTED" as const }
+          : {}),
+        preparationStatus: isPublishingConflict ? "BLOCKED" : "FAILED",
         preparationErrorSummary: message,
       },
     });
@@ -502,10 +524,15 @@ export async function prepareExistingAppAction(
       error: message,
     });
 
+    if (isPublishingConflict) {
+      revalidateImportedRepositoryViews(requestId);
+      return;
+    }
+
     throw error;
   }
 
-  revalidatePath("/apps");
+  revalidateImportedRepositoryViews(requestId);
 }
 
 function formatPublishReadinessError(readiness: {
@@ -538,7 +565,12 @@ export async function verifyExistingAppPreparationAction(
     throw new Error("Imported app repository is not ready for verification.");
   }
 
-  if (appRequest.repositoryImport.preparationStatus !== "PULL_REQUEST_OPENED") {
+  const canVerifyPreparation =
+    appRequest.repositoryImport.preparationStatus === "PULL_REQUEST_OPENED" ||
+    (appRequest.repositoryImport.preparationStatus === "BLOCKED" &&
+      appRequest.repositoryImport.compatibilityStatus === "CONFLICTED");
+
+  if (!canVerifyPreparation) {
     throw new Error(
       "Imported app preparation is not awaiting PR merge verification.",
     );
@@ -556,19 +588,19 @@ export async function verifyExistingAppPreparationAction(
     await prisma.repositoryImport.update({
       where: { id: appRequest.repositoryImport.id },
       data: {
-        preparationStatus: "PULL_REQUEST_OPENED",
+        preparationStatus: appRequest.repositoryImport.preparationStatus,
         preparationErrorSummary: formatPublishReadinessError(readiness),
       },
     });
 
-    revalidatePath("/apps");
+    revalidateImportedRepositoryViews(requestId);
     return;
   }
 
   const verifiedImport = await prisma.repositoryImport.updateMany({
     where: {
       id: appRequest.repositoryImport.id,
-      preparationStatus: "PULL_REQUEST_OPENED",
+      preparationStatus: appRequest.repositoryImport.preparationStatus,
     },
     data: {
       preparationStatus: "COMMITTED",
@@ -587,5 +619,5 @@ export async function verifyExistingAppPreparationAction(
     targetRepository: `${appRequest.repositoryOwner}/${appRequest.repositoryName}`,
   });
 
-  revalidatePath("/apps");
+  revalidateImportedRepositoryViews(requestId);
 }

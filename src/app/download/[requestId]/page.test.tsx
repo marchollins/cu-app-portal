@@ -232,6 +232,64 @@ describe("DownloadPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("disables imported app preparation choices and shows live status while pending", async () => {
+    mockUseFormStatus.mockReturnValue({ pending: true });
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_import_pending_buttons",
+      appName: "Campus Dashboard",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      repositoryStatus: "READY",
+      repositoryAccessStatus: "GRANTED",
+      repositoryAccessNote: null,
+      repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+      publishStatus: "NOT_STARTED",
+      publishUrl: null,
+      primaryPublishUrl: null,
+      azureWebAppName: null,
+      publishErrorSummary: null,
+      repositoryImport: {
+        sourceRepositoryUrl: "https://github.com/example/campus-dashboard",
+        importStatus: "SUCCEEDED",
+        compatibilityStatus: "NEEDS_ADDITIONS",
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
+      artifact: null,
+      publishAttempts: [],
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(
+      await DownloadPage({
+        params: Promise.resolve({ requestId: "req_import_pending_buttons" }),
+      }),
+    );
+
+    const importedStatus = screen.getByRole("region", {
+      name: /imported repository status/i,
+    });
+    expect(
+      within(importedStatus).getByRole("button", {
+        name: /committing azure publishing additions/i,
+      }),
+    ).toBeDisabled();
+    expect(
+      within(importedStatus).getByRole("button", {
+        name: /opening azure publishing pr/i,
+      }),
+    ).toBeDisabled();
+    const pendingStatuses = within(importedStatus).getAllByRole("status");
+    expect(pendingStatuses).toHaveLength(2);
+    expect(pendingStatuses[0]).toHaveTextContent(
+      /committing azure publishing additions/i,
+    );
+    expect(pendingStatuses[1]).toHaveTextContent(
+      /opening azure publishing pull request/i,
+    );
+  });
+
   it("shows publish actions for committed imported apps", async () => {
     vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({

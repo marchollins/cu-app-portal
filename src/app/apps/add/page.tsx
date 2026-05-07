@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUserIdOrNull } from "@/features/app-requests/current-user";
+import { PendingSubmitButton } from "@/features/forms/pending-submit-button";
 import { addExistingAppAction } from "@/features/repository-imports/actions";
 
 async function submitExistingAppAction(formData: FormData) {
@@ -82,9 +83,12 @@ export default async function AddExistingAppPage() {
           </div>
 
           <div>
-            <button type="submit" className="btn btn--primary-solid">
-              Analyze Repository
-            </button>
+            <PendingSubmitButton
+              idleLabel="Analyze Repository"
+              pendingLabel="Analyzing Repository..."
+              statusText="Analyzing repository and preparing import. This can take a moment."
+              variant="primary-solid"
+            />
           </div>
         </form>
       </div>

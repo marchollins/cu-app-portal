@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { revalidatePath } from "next/cache";
 import { resolveCurrentUserId } from "@/features/app-requests/current-user";
 import { loadGitHubAppConfig } from "@/features/repositories/config";
 import { createGitHubAppClient } from "@/features/repositories/github-app";
@@ -99,6 +100,7 @@ vi.mock("./import-repository", () => ({
 
 describe("repository import actions", () => {
   beforeEach(() => {
+    vi.mocked(revalidatePath).mockReset();
     vi.mocked(resolveCurrentUserId).mockReset();
     vi.mocked(loadGitHubAppConfig).mockClear();
     vi.mocked(createGitHubAppClient).mockReset();
@@ -771,7 +773,7 @@ describe("repository import actions", () => {
     });
   });
 
-  it("records failed preparation errors", async () => {
+  it("records publishing-file conflicts as blocked feedback without throwing", async () => {
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
       id: "req_456",
@@ -803,15 +805,16 @@ describe("repository import actions", () => {
           createPullRequestWithFiles: vi.fn(),
         },
       }),
-    ).rejects.toThrow("Repository has publishing file conflicts");
+    ).resolves.toBeUndefined();
 
     expect(prisma.repositoryImport.update).toHaveBeenCalledWith({
       where: { id: "import_456" },
       data: expect.objectContaining({
         preparationMode: "PULL_REQUEST",
-        preparationStatus: "FAILED",
+        compatibilityStatus: "CONFLICTED",
+        preparationStatus: "BLOCKED",
         preparationErrorSummary:
-          "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists.",
+          "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists. The portal will not overwrite existing publishing files. Continue in Codex to inspect and merge the existing publishing files, then return to verify readiness.",
       }),
     });
     expect(recordAuditEvent).toHaveBeenCalledWith(
@@ -821,9 +824,53 @@ describe("repository import actions", () => {
         mode: "PULL_REQUEST",
         targetRepository: "cedarville-it/campus-dashboard",
         error:
-          "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists.",
+          "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists. The portal will not overwrite existing publishing files. Continue in Codex to inspect and merge the existing publishing files, then return to verify readiness.",
       },
     );
+    expect(revalidatePath).toHaveBeenCalledWith("/apps");
+    expect(revalidatePath).toHaveBeenCalledWith("/download/req_456");
+  });
+
+  it("still raises unexpected preparation failures after recording them", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_unexpected",
+      userId: "user-123",
+      appName: "Campus Dashboard",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      repositoryImport: {
+        id: "import_unexpected",
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prepareImportedRepository).mockRejectedValue(
+      new Error("GitHub API rate limit exceeded."),
+    );
+
+    const formData = new FormData();
+    formData.set("preparationMode", "DIRECT_COMMIT");
+
+    await expect(
+      prepareExistingAppAction("req_unexpected", formData, {
+        github: {
+          getBranchHead: vi.fn(),
+          readRepositoryTextFiles: vi.fn(),
+          commitFiles: vi.fn(),
+          createPullRequestWithFiles: vi.fn(),
+        },
+      }),
+    ).rejects.toThrow("GitHub API rate limit exceeded.");
+
+    expect(prisma.repositoryImport.update).toHaveBeenCalledWith({
+      where: { id: "import_unexpected" },
+      data: expect.objectContaining({
+        preparationMode: "DIRECT_COMMIT",
+        preparationStatus: "FAILED",
+        preparationErrorSummary: "GitHub API rate limit exceeded.",
+      }),
+    });
   });
 
   it("rejects preparation unless the import is awaiting a user choice", async () => {
@@ -971,6 +1018,43 @@ describe("repository import actions", () => {
         targetRepository: "cedarville-it/campus-dashboard",
       },
     );
+  });
+
+  it("marks conflict-blocked repositories committed when required publishing files reach the default branch", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_verify_conflict",
+      userId: "user-123",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      repositoryImport: {
+        id: "import_verify_conflict",
+        compatibilityStatus: "CONFLICTED",
+        preparationStatus: "BLOCKED",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    const github = {
+      readRepositoryTextFiles: vi.fn().mockResolvedValue({
+        "package.json": readyPackageJson,
+        ...Object.fromEntries(
+          PUBLISHING_BUNDLE_PATHS.map((path) => [path, "content"]),
+        ),
+      }),
+    };
+
+    await verifyExistingAppPreparationAction("req_verify_conflict", { github });
+
+    expect(prisma.repositoryImport.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "import_verify_conflict",
+        preparationStatus: "BLOCKED",
+      },
+      data: {
+        preparationStatus: "COMMITTED",
+        preparationErrorSummary: null,
+      },
+    });
   });
 
   it("rejects preparation verification unless the import is awaiting PR merge verification", async () => {
