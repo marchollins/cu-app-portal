@@ -3162,3 +3162,12 @@ git commit -m "docs: document existing app imports"
 - Do not introduce GitHub OAuth in this implementation.
 - Do not make direct commits when compatibility reports conflicts.
 - Do not overwrite existing publishing files in imported repositories.
+
+## Follow-Up TODOs
+
+- [ ] Handle publishing-file conflicts without surfacing an unhandled server error.
+- [ ] Add a clear conflict-resolution path: either resolve safe conflicts in the portal or instruct the user to continue with Codex.
+- [ ] Treat repositories as ready for Azure publishing when the required files and contents are already present.
+- [ ] Improve button UX for long-running import, preparation, and publishing actions so it matches the portal's existing background-process patterns.
+- [ ] Improve user-facing feedback across import, preparation, conflict, readiness, and publishing states.
+- [ ] Link to the relevant GitHub Actions logs from deployment status and failure views for Azure deployment debugging.

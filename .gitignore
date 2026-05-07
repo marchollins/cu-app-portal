@@ -12,3 +12,5 @@ tsconfig.next.tsbuildinfo
 test-results
 .worktrees
 .claude/worktrees
+dontpublish
+
