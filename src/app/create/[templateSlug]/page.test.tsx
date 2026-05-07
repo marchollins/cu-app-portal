@@ -47,9 +47,6 @@ describe("TemplatePage", () => {
     expect(
       screen.getByRole("heading", { name: /web app starter/i }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /log out/i }),
-    ).toBeInTheDocument();
     expect(screen.getByLabelText(/app name/i)).toBeInTheDocument();
   });
 

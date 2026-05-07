@@ -8,17 +8,32 @@ export function TemplateFormFields({ template }: { template: PortalTemplate }) {
         switch (field.type) {
           case "text":
             return (
-              <label key={field.name}>
-                {field.label}
-                <input name={field.name} type="text" required={field.required} />
-              </label>
+              <div key={field.name} className="form-group">
+                <label className="form-label" htmlFor={field.name}>
+                  {field.label}
+                </label>
+                <input
+                  id={field.name}
+                  name={field.name}
+                  type="text"
+                  required={field.required}
+                  className="form-control"
+                />
+              </div>
             );
           case "textarea":
             return (
-              <label key={field.name}>
-                {field.label}
-                <textarea name={field.name} required={field.required} />
-              </label>
+              <div key={field.name} className="form-group">
+                <label className="form-label" htmlFor={field.name}>
+                  {field.label}
+                </label>
+                <textarea
+                  id={field.name}
+                  name={field.name}
+                  required={field.required}
+                  className="form-control"
+                />
+              </div>
             );
           case "select":
             if (field.options.length === 1) {
@@ -33,9 +48,16 @@ export function TemplateFormFields({ template }: { template: PortalTemplate }) {
             }
 
             return (
-              <label key={field.name}>
-                {field.label}
-                <select name={field.name} required={field.required}>
+              <div key={field.name} className="form-group">
+                <label className="form-label" htmlFor={field.name}>
+                  {field.label}
+                </label>
+                <select
+                  id={field.name}
+                  name={field.name}
+                  required={field.required}
+                  className="form-control"
+                >
                   <option value="">Select an option</option>
                   {field.options.map((option) => (
                     <option key={option} value={option}>
@@ -43,7 +65,7 @@ export function TemplateFormFields({ template }: { template: PortalTemplate }) {
                     </option>
                   ))}
                 </select>
-              </label>
+              </div>
             );
           default:
             throw new Error("Unsupported template field type.");

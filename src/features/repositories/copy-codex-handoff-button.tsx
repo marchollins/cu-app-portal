@@ -9,14 +9,16 @@ export function CopyCodexHandoffButton({ prompt }: { prompt: string }) {
   async function handleCopy() {
     await navigator.clipboard.writeText(prompt);
     setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
   }
 
   return (
-    <>
-      <button type="button" onClick={() => void handleCopy()}>
-        Copy Codex Handoff Prompt
-      </button>
-      {copied ? <span>Copied.</span> : null}
-    </>
+    <button
+      type="button"
+      onClick={() => void handleCopy()}
+      className={`btn btn--sm ${copied ? "btn--secondary-solid" : "btn--secondary"}`}
+    >
+      {copied ? "✓ Copied!" : "Copy Codex Handoff Prompt"}
+    </button>
   );
 }
