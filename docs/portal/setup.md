@@ -19,6 +19,11 @@ Add these values to `.env` for local development:
 - `AUTH_MICROSOFT_ENTRA_ID_SECRET`
 - `AUTH_MICROSOFT_ENTRA_ID_ISSUER`
 
+Keep real secret values only in ignored local env files or managed secret
+stores such as Azure App Service application settings and GitHub Actions
+secrets. Do not paste real secret values into tracked docs, examples, tests,
+or templates.
+
 To enable portal-managed GitHub repository creation during the create flow, also set:
 
 - `GITHUB_APP_ID`
@@ -31,6 +36,7 @@ To enable portal-managed GitHub repository creation during the create flow, also
 Notes for GitHub App setup:
 
 - `GITHUB_APP_PRIVATE_KEY` can be stored as a multi-line PEM or as a single-line value with escaped `\n` characters.
+- GitHub App private key PEM downloads should stay outside tracked files. The repo ignores common key and certificate file extensions, and `.env.example` intentionally leaves private-key fields blank.
 - Use `GITHUB_APP_INSTALLATION_ID` when all generated repos target one org.
 - Use `GITHUB_APP_INSTALLATIONS_JSON` when different Cedarville orgs need different installation ids, for example `{"cedarville-it":"111","cedarville-apps":"222"}`.
 - `GITHUB_DEFAULT_ORG` must match one of the orgs allowed by `GITHUB_ALLOWED_ORGS`.

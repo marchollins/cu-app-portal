@@ -23,15 +23,14 @@ describe("loadGitHubAppConfig", () => {
   it("normalizes escaped newlines in the GitHub App private key", () => {
     const config = loadGitHubAppConfig({
       GITHUB_APP_ID: "12345",
-      GITHUB_APP_PRIVATE_KEY:
-        "-----BEGIN PRIVATE KEY-----\\nline-1\\nline-2\\n-----END PRIVATE KEY-----",
+      GITHUB_APP_PRIVATE_KEY: "key-line-1\\nkey-line-2",
       GITHUB_ALLOWED_ORGS: "cedarville-it",
       GITHUB_DEFAULT_ORG: "cedarville-it",
       GITHUB_DEFAULT_REPO_VISIBILITY: "private",
       GITHUB_APP_INSTALLATION_ID: "111",
     });
 
-    expect(config.privateKey).toContain("-----BEGIN PRIVATE KEY-----\nline-1");
+    expect(config.privateKey).toContain("key-line-1\nkey-line-2");
     expect(config.privateKey).not.toContain("\\n");
   });
 

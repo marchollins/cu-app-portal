@@ -5,6 +5,10 @@ coverage
 **/.env
 **/.env.*
 !.env.example
+*.key
+*.pem
+*.p12
+*.pfx
 tsconfig.tsbuildinfo
 tsconfig.next.tsbuildinfo
 *.log
@@ -13,4 +17,3 @@ test-results
 .worktrees
 .claude/worktrees
 dontpublish
-
