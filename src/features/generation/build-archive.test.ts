@@ -134,6 +134,8 @@ describe("buildArchive", () => {
       .file(".github/workflows/deploy-azure-app-service.yml")!
       .async("string");
 
+    expect(renderedWorkflow).toContain("on:\n  workflow_dispatch:");
+    expect(renderedWorkflow).not.toContain("push:\n    branches:");
     expect(renderedWorkflow).toContain(
       "AZURE_WEBAPP_NAME: ${{ secrets.AZURE_WEBAPP_NAME }}",
     );

@@ -2,9 +2,6 @@ name: Deploy to Azure App Service
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 env:
   AZURE_WEBAPP_NAME: ${{ secrets.AZURE_WEBAPP_NAME }}
