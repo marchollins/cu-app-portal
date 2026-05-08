@@ -40,6 +40,12 @@ describe("buildPublishingFiles", () => {
     expect(files["docs/publishing/azure-app-service.md"]).toContain(
       "Azure Database for PostgreSQL",
     );
+    expect(files["docs/publishing/azure-app-service.md"]).toContain(
+      "dispatch the first GitHub Actions workflow run",
+    );
+    expect(files["docs/publishing/azure-app-service.md"]).toContain(
+      "enable push-to-deploy",
+    );
     expect(files["docs/publishing/lessons-learned.md"]).toContain(
       "# Publishing Lessons Learned",
     );

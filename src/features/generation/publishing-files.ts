@@ -11,9 +11,11 @@ The usual flow is:
 1. Let the portal create and track the managed GitHub repository.
 2. Open that repo locally in Codex on your machine.
 3. Let Codex clone, edit, commit, and push your changes.
-4. Return to the portal and use its publish flow for Azure Database for PostgreSQL and App Service.
-5. Keep local development on the localhost \`DATABASE_URL\` in \`.env.example\`.
-6. Treat manual GitHub or Azure CLI work as a recovery path, not the primary workflow.
+4. Return to the portal and use its publish flow for the first Azure Database for PostgreSQL and App Service deployment.
+5. Let the portal dispatch the first GitHub Actions workflow run after Azure resources, OIDC, and repository secrets are ready.
+6. After a successful portal publish, enable push-to-deploy in the portal if default-branch pushes should deploy automatically.
+7. Keep local development on the localhost \`DATABASE_URL\` in \`.env.example\`.
+8. Treat manual GitHub or Azure CLI work as a recovery path, not the primary workflow.
 
 If automation gets blocked, use docs/publishing/lessons-learned.md to record what happened and what to try next.`,
     "docs/publishing/lessons-learned.md": `# Publishing Lessons Learned

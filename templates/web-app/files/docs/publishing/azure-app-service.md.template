@@ -7,18 +7,11 @@ This bundle supports one first-class publishing path for `{{APP_NAME}}`: a porta
 1. Prefer the GitHub repository that the portal created and tracks for this app.
 2. Open that managed repo locally in Codex on your machine and push the changes you want published.
 3. Review `app-portal/deployment-manifest.json` for the generated deployment contract.
-4. Create the Azure Database for PostgreSQL flexible server and the production database named in the manifest.
-5. Keep local development on the localhost `DATABASE_URL` from `.env.example`.
-6. Set the App Service `DATABASE_URL` app setting to the Azure PostgreSQL connection string with `sslmode=require`.
-7. Set both `AUTH_URL` and `NEXTAUTH_URL` to the public site origin, for example `https://{{APP_NAME_SLUG}}.azurewebsites.net`, so Auth.js does not fall back to `localhost`.
+4. Use the portal's publish action for the first Azure deployment. The generated workflow starts as `workflow_dispatch` only so GitHub does not deploy before the portal has created Azure resources and GitHub secrets.
+5. Let the portal create the Azure Database for PostgreSQL database, App Service configuration, OpenID Connect credential, and GitHub Actions secrets.
+6. Let the portal dispatch the first workflow run and verify the deployment in Azure App Service.
+7. After the first successful portal publish, enable push-to-deploy in the portal if future pushes to the default branch should deploy automatically.
 8. Use `.codex/skills/publish-to-azure/SKILL.md` to drive the publish flow when portal automation is unavailable and you need a local recovery path.
-9. Configure GitHub Actions Azure authentication with OpenID Connect.
-10. Add these GitHub repository secrets:
-   - `AZURE_CLIENT_ID`
-   - `AZURE_TENANT_ID`
-   - `AZURE_SUBSCRIPTION_ID`
-11. Trigger the workflow and verify the deployment in Azure App Service.
-12. Let GitHub Actions build the deployment package and send the built artifact to Azure App Service.
 
 ## Fallback Path
 
@@ -30,7 +23,7 @@ If automation is blocked, complete the publish manually with the same manifest a
 4. Save `AUTH_URL` and `NEXTAUTH_URL` in the Azure App Service app settings using the public Azure hostname.
 5. Create or select the Azure identity used by GitHub Actions.
 6. Add the Azure identity secrets to GitHub.
-7. Push to `main` or trigger the workflow manually.
+7. Trigger the workflow manually with `workflow_dispatch`. After the portal or an operator enables push-to-deploy, future pushes to the default branch can deploy automatically.
 8. Record any manual changes or blockers in `docs/publishing/lessons-learned.md`.
 
 ## GitHub CLI Shortcut
@@ -46,8 +39,6 @@ gh secret set AZURE_SUBSCRIPTION_ID --body "replace-me"
 Then trigger the workflow:
 
 ```bash
-git push origin main
-# or
 gh workflow run deploy-azure-app-service.yml
 ```
 
@@ -58,3 +49,4 @@ gh workflow run deploy-azure-app-service.yml
 - Set both `AUTH_URL` and `NEXTAUTH_URL` to the public Azure hostname in production so Auth.js does not generate `localhost` sign-in URLs.
 - Prefer updating the generated workflow and manifest instead of creating parallel deployment instructions.
 - Prefer GitHub Actions to build the deployment package and keep Azure focused on running the artifact.
+- Keep the initial workflow manual-only. Add the default-branch push trigger only after the first deployment succeeds.

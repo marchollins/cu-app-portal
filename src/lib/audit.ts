@@ -22,7 +22,8 @@ export type AuditEvent =
   | "REPOSITORY_PREPARATION_FAILED"
   | "PUBLISH_REQUESTED"
   | "PUBLISH_SUCCEEDED"
-  | "PUBLISH_FAILED";
+  | "PUBLISH_FAILED"
+  | "PUSH_TO_DEPLOY_ENABLED";
 
 export async function recordAuditEvent(
   event: AuditEvent,
