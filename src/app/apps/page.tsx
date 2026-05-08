@@ -217,8 +217,9 @@ function renderImportedRepositoryStatus(request: {
       </div>
       {hasPublishingFileConflict ? (
         <div className="warning-box" style={{ marginTop: "0.75rem" }}>
-          The portal will not overwrite existing publishing files. Continue in
-          Codex to inspect and merge them, then verify readiness here.
+          The portal will not overwrite existing publishing files directly. Open
+          a PR to review the generated changes in Git, or resolve them manually
+          and verify readiness here.
         </div>
       ) : null}
       {repositoryImport.preparationStatus === "PENDING_USER_CHOICE" ? (
@@ -244,6 +245,18 @@ function renderImportedRepositoryStatus(request: {
             />
           </form>
         </div>
+      ) : null}
+      {hasPublishingFileConflict ? (
+        <form action={prepareAction} style={{ marginTop: "0.75rem" }}>
+          <input name="preparationMode" type="hidden" value="PULL_REQUEST" />
+          <PendingSubmitButton
+            idleLabel="Open Azure Publishing PR"
+            pendingLabel="Opening Azure Publishing PR..."
+            statusText="Opening Azure publishing pull request. This can take a moment."
+            variant="primary-solid"
+            size="sm"
+          />
+        </form>
       ) : null}
       {canRetryPreparation ? (
         <form action={prepareAction} style={{ marginTop: "0.75rem" }}>

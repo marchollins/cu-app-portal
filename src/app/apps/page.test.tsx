@@ -256,7 +256,7 @@ describe("MyAppsPage", () => {
           compatibilityStatus: "CONFLICTED",
           preparationStatus: "BLOCKED",
           preparationErrorSummary:
-            "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists. The portal will not overwrite existing publishing files. Continue in Codex to inspect and merge the existing publishing files, then return to verify readiness.",
+            "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists. The portal will not overwrite existing publishing files directly. Open an Azure publishing PR to review the generated changes in Git, or resolve them manually and verify readiness here.",
         },
         publishAttempts: [],
       },
@@ -277,19 +277,31 @@ describe("MyAppsPage", () => {
       ).length,
     ).toBeGreaterThan(0);
     expect(
-      within(conflictedCard as HTMLElement).getAllByText(/continue in codex/i)
-        .length,
+      within(conflictedCard as HTMLElement).getAllByText(
+        /review the generated changes in git/i,
+      ).length,
     ).toBeGreaterThan(0);
     expect(
-      within(conflictedCard as HTMLElement).getByText(
-        /verify readiness here/i,
-      ),
-    ).toBeInTheDocument();
+      within(conflictedCard as HTMLElement).getAllByText(/verify readiness here/i)
+        .length,
+    ).toBeGreaterThan(0);
     expect(
       within(conflictedCard as HTMLElement).getByRole("button", {
         name: /verify repository readiness/i,
       }),
     ).toBeInTheDocument();
+    expect(
+      within(conflictedCard as HTMLElement).getByRole("button", {
+        name: /open azure publishing pr/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      Array.from(
+        (conflictedCard as HTMLElement).querySelectorAll(
+          'input[name="preparationMode"]',
+        ),
+      ).map((input) => (input as HTMLInputElement).value),
+    ).toEqual(["PULL_REQUEST"]);
   });
 
   it("shows imported repository status and preparation choices", async () => {

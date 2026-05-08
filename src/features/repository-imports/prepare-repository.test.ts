@@ -140,6 +140,52 @@ describe("prepareImportedRepository", () => {
     );
   });
 
+  it("opens a PR when publishing-file conflicts need review", async () => {
+    const github = {
+      getBranchHead: vi.fn().mockResolvedValue({ sha: "head-sha" }),
+      readRepositoryTextFiles: vi.fn().mockResolvedValue({
+        ...files,
+        "app-portal/deployment-manifest.json": "{}",
+      }),
+      commitFiles: vi.fn(),
+      createPullRequestWithFiles: vi.fn().mockResolvedValue({
+        commitSha: "commit-sha",
+        pullRequestUrl:
+          "https://github.com/cedarville-it/campus-dashboard/pull/1",
+      }),
+    };
+
+    await expect(
+      prepareImportedRepository({
+        appName: "Campus Dashboard",
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        defaultBranch: "main",
+        mode: "PULL_REQUEST",
+        github,
+      }),
+    ).resolves.toEqual({
+      status: "PULL_REQUEST_OPENED",
+      commitSha: "commit-sha",
+      pullRequestUrl:
+        "https://github.com/cedarville-it/campus-dashboard/pull/1",
+    });
+    expect(github.createPullRequestWithFiles).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branch: "portal/add-azure-publishing-campus-dashboard",
+        body: expect.stringContaining(
+          "Existing publishing files were detected",
+        ),
+        files: expect.objectContaining({
+          "app-portal/deployment-manifest.json": expect.stringContaining(
+            '"templateSlug": "imported-web-app"',
+          ),
+        }),
+      }),
+    );
+    expect(github.commitFiles).not.toHaveBeenCalled();
+  });
+
   it("includes compatibility findings for unsupported repositories", async () => {
     const github = {
       getBranchHead: vi.fn().mockResolvedValue({ sha: "head-sha" }),

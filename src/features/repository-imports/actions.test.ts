@@ -810,7 +810,13 @@ describe("repository import actions", () => {
     expect(prisma.repositoryImport.updateMany).toHaveBeenCalledWith({
       where: {
         id: "import_retry_preparation",
-        preparationStatus: { in: ["PENDING_USER_CHOICE", "FAILED"] },
+        OR: [
+          { preparationStatus: { in: ["PENDING_USER_CHOICE", "FAILED"] } },
+          {
+            compatibilityStatus: "CONFLICTED",
+            preparationStatus: "BLOCKED",
+          },
+        ],
       },
       data: {
         preparationMode: "PULL_REQUEST",
@@ -879,7 +885,7 @@ describe("repository import actions", () => {
         compatibilityStatus: "CONFLICTED",
         preparationStatus: "BLOCKED",
         preparationErrorSummary:
-          "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists. The portal will not overwrite existing publishing files. Continue in Codex to inspect and merge the existing publishing files, then return to verify readiness.",
+          "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists. The portal will not overwrite existing publishing files directly. Open an Azure publishing PR to review the generated changes in Git, or resolve them manually and verify readiness here.",
       }),
     });
     expect(recordAuditEvent).toHaveBeenCalledWith(
@@ -889,11 +895,83 @@ describe("repository import actions", () => {
         mode: "PULL_REQUEST",
         targetRepository: "cedarville-it/campus-dashboard",
         error:
-          "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists. The portal will not overwrite existing publishing files. Continue in Codex to inspect and merge the existing publishing files, then return to verify readiness.",
+          "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists. The portal will not overwrite existing publishing files directly. Open an Azure publishing PR to review the generated changes in Git, or resolve them manually and verify readiness here.",
       },
     );
     expect(revalidatePath).toHaveBeenCalledWith("/apps");
     expect(revalidatePath).toHaveBeenCalledWith("/download/req_456");
+  });
+
+  it("opens a preparation PR from a conflict-blocked imported app", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_conflict_pr",
+      userId: "user-123",
+      appName: "Campus Dashboard",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      repositoryImport: {
+        id: "import_conflict_pr",
+        compatibilityStatus: "CONFLICTED",
+        preparationStatus: "BLOCKED",
+        preparationErrorSummary:
+          "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists.",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prepareImportedRepository).mockResolvedValue({
+      status: "PULL_REQUEST_OPENED",
+      commitSha: "commit-sha",
+      pullRequestUrl: "https://github.com/cedarville-it/campus-dashboard/pull/8",
+    });
+
+    const formData = new FormData();
+    formData.set("preparationMode", "PULL_REQUEST");
+
+    await prepareExistingAppAction("req_conflict_pr", formData, {
+      github: {
+        getBranchHead: vi.fn(),
+        readRepositoryTextFiles: vi.fn(),
+        commitFiles: vi.fn(),
+        createPullRequestWithFiles: vi.fn(),
+      },
+    });
+
+    expect(prisma.repositoryImport.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "import_conflict_pr",
+        OR: [
+          { preparationStatus: { in: ["PENDING_USER_CHOICE", "FAILED"] } },
+          {
+            compatibilityStatus: "CONFLICTED",
+            preparationStatus: "BLOCKED",
+          },
+        ],
+      },
+      data: {
+        preparationMode: "PULL_REQUEST",
+        preparationStatus: "RUNNING",
+        preparationErrorSummary: null,
+      },
+    });
+    expect(prepareImportedRepository).toHaveBeenCalledWith({
+      appName: "Campus Dashboard",
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      defaultBranch: "main",
+      mode: "PULL_REQUEST",
+      github: expect.any(Object),
+    });
+    expect(prisma.repositoryImport.update).toHaveBeenCalledWith({
+      where: { id: "import_conflict_pr" },
+      data: expect.objectContaining({
+        preparationMode: "PULL_REQUEST",
+        preparationStatus: "PULL_REQUEST_OPENED",
+        preparationPullRequestUrl:
+          "https://github.com/cedarville-it/campus-dashboard/pull/8",
+        preparationErrorSummary: null,
+      }),
+    });
   });
 
   it("still raises unexpected preparation failures after recording them", async () => {

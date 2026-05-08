@@ -63,8 +63,11 @@ const READ_PATHS = [
   ...PUBLISHING_BUNDLE_PATHS,
 ];
 
-function buildPullRequestBody(appName: string) {
-  return [
+function buildPullRequestBody(
+  appName: string,
+  options: { hasPublishingFileConflicts?: boolean } = {},
+) {
+  const body = [
     `This PR prepares ${appName} for Cedarville App Portal-managed Azure publishing.`,
     "",
     "Changes:",
@@ -72,7 +75,16 @@ function buildPullRequestBody(appName: string) {
     "- Adds the App Portal deployment manifest.",
     "- Adds publishing docs and fallback Codex skill.",
     "- Adds narrow package.json runtime defaults when missing.",
-  ].join("\n");
+  ];
+
+  if (options.hasPublishingFileConflicts) {
+    body.push(
+      "",
+      "Existing publishing files were detected. Review these diffs and resolve the repository's preferred publishing setup before merging.",
+    );
+  }
+
+  return body.join("\n");
 }
 
 function formatCompatibilityError(
@@ -120,7 +132,7 @@ export async function prepareImportedRepository({
   });
   const compatibility = scanRepositoryCompatibility(files);
 
-  if (compatibility.status === "CONFLICTED") {
+  if (compatibility.status === "CONFLICTED" && mode === "DIRECT_COMMIT") {
     throw new Error(
       formatCompatibilityError(
         "Repository has publishing file conflicts.",
@@ -129,11 +141,15 @@ export async function prepareImportedRepository({
     );
   }
 
-  if (compatibility.status === "UNSUPPORTED") {
+  const blockingFindings = compatibility.findings.filter(
+    (finding) => finding.severity === "error" && finding.code !== "FILE_CONFLICT",
+  );
+
+  if (compatibility.status === "UNSUPPORTED" || blockingFindings.length > 0) {
     throw new Error(
       formatCompatibilityError(
         "Repository is not compatible with v1 Azure publishing.",
-        compatibility.findings,
+        blockingFindings.length > 0 ? blockingFindings : compatibility.findings,
       ),
     );
   }
@@ -143,6 +159,7 @@ export async function prepareImportedRepository({
     repositoryOwner: owner,
     repositoryName: name,
     files,
+    allowPublishingPathConflicts: mode === "PULL_REQUEST",
   });
 
   if (mode === "DIRECT_COMMIT") {
@@ -169,7 +186,9 @@ export async function prepareImportedRepository({
     baseBranch: defaultBranch,
     branch,
     title: "Add Azure publishing support",
-    body: buildPullRequestBody(appName),
+    body: buildPullRequestBody(appName, {
+      hasPublishingFileConflicts: compatibility.status === "CONFLICTED",
+    }),
     message: "Add Azure publishing support",
     expectedHeadSha: head.sha,
     files: plan.filesToWrite,

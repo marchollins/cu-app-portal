@@ -232,6 +232,65 @@ describe("DownloadPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers a preparation PR for conflict-blocked imported apps", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_import_conflict",
+      appName: "Campus Dashboard",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      repositoryStatus: "READY",
+      repositoryAccessStatus: "GRANTED",
+      repositoryAccessNote: null,
+      repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+      publishStatus: "NOT_STARTED",
+      publishUrl: null,
+      primaryPublishUrl: null,
+      azureWebAppName: null,
+      publishErrorSummary: null,
+      repositoryImport: {
+        sourceRepositoryUrl: "https://github.com/example/campus-dashboard",
+        importStatus: "SUCCEEDED",
+        compatibilityStatus: "CONFLICTED",
+        preparationStatus: "BLOCKED",
+        preparationErrorSummary:
+          "Repository has publishing file conflicts. app-portal/deployment-manifest.json already exists.",
+      },
+      artifact: null,
+      publishAttempts: [],
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    const { container } = render(
+      await DownloadPage({
+        params: Promise.resolve({ requestId: "req_import_conflict" }),
+      }),
+    );
+
+    const importedStatus = screen.getByRole("region", {
+      name: /imported repository status/i,
+    });
+    expect(
+      within(importedStatus).getByText(/Preparation: blocked/i),
+    ).toBeInTheDocument();
+    expect(
+      within(importedStatus).getByRole("button", {
+        name: /open azure publishing pr/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(importedStatus).getByRole("button", {
+        name: /verify repository readiness/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      Array.from(container.querySelectorAll('input[name="preparationMode"]')).map(
+        (input) => (input as HTMLInputElement).value,
+      ),
+    ).toEqual(["PULL_REQUEST"]);
+  });
+
   it("disables imported app preparation choices and shows live status while pending", async () => {
     mockUseFormStatus.mockReturnValue({ pending: true });
     vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");

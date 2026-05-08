@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { resolveCurrentUserId } from "@/features/app-requests/current-user";
 import { loadGitHubAppConfig } from "@/features/repositories/config";
@@ -21,6 +22,7 @@ const addExistingAppSchema = z.object({
 });
 
 const preparationModeSchema = z.enum(["DIRECT_COMMIT", "PULL_REQUEST"]);
+const PREPARABLE_STATUSES = ["PENDING_USER_CHOICE", "FAILED"] as const;
 
 type AddExistingAppDeps = {
   defaultOrg?: string;
@@ -219,7 +221,7 @@ function isPublishingFileConflictError(error: unknown) {
 }
 
 function buildPublishingFileConflictFeedback(message: string) {
-  return `${message} The portal will not overwrite existing publishing files. Continue in Codex to inspect and merge the existing publishing files, then return to verify readiness.`;
+  return `${message} The portal will not overwrite existing publishing files directly. Open an Azure publishing PR to review the generated changes in Git, or resolve them manually and verify readiness here.`;
 }
 
 function getFailedTargetRepository({
@@ -453,11 +455,25 @@ export async function prepareExistingAppAction(
     throw new Error("Imported app repository is not ready for preparation.");
   }
 
+  const preparationTransitionWhere: Prisma.RepositoryImportWhereInput =
+    mode === "PULL_REQUEST"
+      ? {
+          id: appRequest.repositoryImport.id,
+          OR: [
+            { preparationStatus: { in: [...PREPARABLE_STATUSES] } },
+            {
+              compatibilityStatus: "CONFLICTED" as const,
+              preparationStatus: "BLOCKED" as const,
+            },
+          ],
+        }
+      : {
+          id: appRequest.repositoryImport.id,
+          preparationStatus: { in: [...PREPARABLE_STATUSES] },
+        };
+
   const runningImport = await prisma.repositoryImport.updateMany({
-    where: {
-      id: appRequest.repositoryImport.id,
-      preparationStatus: { in: ["PENDING_USER_CHOICE", "FAILED"] },
-    },
+    where: preparationTransitionWhere,
     data: {
       preparationMode: mode,
       preparationStatus: "RUNNING",

@@ -9,6 +9,7 @@ type PublishingBundleInput = {
   repositoryOwner: string;
   repositoryName: string;
   files: RepositoryFileMap;
+  allowPublishingPathConflicts?: boolean;
 };
 
 type PublishingBundlePlan = {
@@ -140,8 +141,12 @@ export function planPublishingBundle({
   appName,
   repositoryName,
   files,
+  allowPublishingPathConflicts = false,
 }: PublishingBundleInput): PublishingBundlePlan {
-  assertNoPublishingPathConflicts(files);
+  if (!allowPublishingPathConflicts) {
+    assertNoPublishingPathConflicts(files);
+  }
+
   const filesToWrite: Record<string, string> = {};
   const updatedPackageJson = updatePackageJson(files["package.json"]);
 
