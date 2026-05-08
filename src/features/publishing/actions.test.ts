@@ -1,9 +1,37 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveCurrentUserId } from "@/features/app-requests/current-user";
+import { createGitHubAppClient } from "@/features/repositories/github-app";
 import { prisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
-import { publishToAzureAction, retryPublishAction } from "./actions";
+import {
+  enablePushToDeployAction,
+  publishToAzureAction,
+  retryPublishAction,
+} from "./actions";
 import { runPublishAttempt } from "./run-publish-attempt";
+
+const mockGithub = vi.hoisted(() => ({
+  readRepositoryTextFiles: vi.fn(),
+  getBranchHead: vi.fn(),
+  commitFiles: vi.fn(),
+}));
+
+const manualWorkflow = `name: Deploy to Azure App Service
+
+on:
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: \${{ secrets.AZURE_WEBAPP_NAME }}
+  DEPLOY_PACKAGE_PATH: release
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+`;
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
@@ -15,6 +43,21 @@ vi.mock("@/features/app-requests/current-user", () => ({
 
 vi.mock("@/lib/audit", () => ({
   recordAuditEvent: vi.fn(),
+}));
+
+vi.mock("@/features/repositories/config", () => ({
+  loadGitHubAppConfig: vi.fn(() => ({
+    appId: "123",
+    privateKey: "private-key",
+    allowedOrgs: ["cedarville-it"],
+    defaultOrg: "cedarville-it",
+    defaultRepoVisibility: "private",
+    installationIdsByOrg: { "cedarville-it": "456" },
+  })),
+}));
+
+vi.mock("@/features/repositories/github-app", () => ({
+  createGitHubAppClient: vi.fn(() => mockGithub),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -52,9 +95,18 @@ describe("publishing actions", () => {
     vi.mocked(prisma.appRequest.update).mockReset();
     vi.mocked(prisma.appRequest.updateMany).mockReset();
     vi.mocked(prisma.publishAttempt.create).mockReset();
+    mockGithub.readRepositoryTextFiles.mockReset();
+    mockGithub.getBranchHead.mockReset();
+    mockGithub.commitFiles.mockReset();
     vi.mocked(recordAuditEvent).mockReset();
     vi.mocked(runPublishAttempt).mockReset();
     vi.mocked(runPublishAttempt).mockResolvedValue(undefined);
+    vi.mocked(createGitHubAppClient).mockClear();
+    mockGithub.readRepositoryTextFiles.mockResolvedValue({
+      ".github/workflows/deploy-azure-app-service.yml": manualWorkflow,
+    });
+    mockGithub.getBranchHead.mockResolvedValue({ sha: "head-sha" });
+    mockGithub.commitFiles.mockResolvedValue({ commitSha: "commit-sha" });
     vi.mocked(prisma.$transaction).mockImplementation(async (callback) => {
       if (typeof callback !== "function") {
         throw new Error("Unexpected batch transaction in test.");
@@ -313,5 +365,140 @@ describe("publishing actions", () => {
       }),
     );
     expect(runPublishAttempt).toHaveBeenCalledWith("attempt-456");
+  });
+
+  it("rejects push-to-deploy before a successful publish", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "request-123",
+      userId: "user-123",
+      sourceOfTruth: "PORTAL_MANAGED_REPO",
+      repositoryStatus: "READY",
+      publishStatus: "NOT_STARTED",
+      deploymentTarget: "Azure App Service",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+
+    await expect(enablePushToDeployAction("request-123")).rejects.toThrow(
+      "Push-to-deploy can only be enabled after a successful publish.",
+    );
+
+    expect(mockGithub.readRepositoryTextFiles).not.toHaveBeenCalled();
+  });
+
+  it("rejects push-to-deploy for imported repositories", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "request-123",
+      userId: "user-123",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      repositoryStatus: "READY",
+      publishStatus: "SUCCEEDED",
+      deploymentTarget: "Azure App Service",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+
+    await expect(enablePushToDeployAction("request-123")).rejects.toThrow(
+      "Push-to-deploy is only available for generated template apps.",
+    );
+
+    expect(mockGithub.readRepositoryTextFiles).not.toHaveBeenCalled();
+  });
+
+  it("commits a push trigger to the managed repository workflow", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "request-123",
+      userId: "user-123",
+      sourceOfTruth: "PORTAL_MANAGED_REPO",
+      repositoryStatus: "READY",
+      publishStatus: "SUCCEEDED",
+      deploymentTarget: "Azure App Service",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      deploymentTriggerMode: "PORTAL_DISPATCH",
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+
+    await enablePushToDeployAction("request-123");
+
+    expect(createGitHubAppClient).toHaveBeenCalledWith({
+      appId: "123",
+      privateKey: "private-key",
+      installationId: "456",
+    });
+    expect(mockGithub.readRepositoryTextFiles).toHaveBeenCalledWith({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      ref: "main",
+      paths: [".github/workflows/deploy-azure-app-service.yml"],
+    });
+    expect(mockGithub.getBranchHead).toHaveBeenCalledWith({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      branch: "main",
+    });
+    expect(mockGithub.commitFiles).toHaveBeenCalledWith({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      branch: "main",
+      message: "Enable push-to-deploy",
+      expectedHeadSha: "head-sha",
+      files: {
+        ".github/workflows/deploy-azure-app-service.yml": expect.stringContaining(
+          "push:\n    branches:\n      - main",
+        ),
+      },
+    });
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-123" },
+      data: {
+        deploymentTriggerMode: "PUSH_TO_DEPLOY",
+        publishErrorSummary: null,
+      },
+    });
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      "PUSH_TO_DEPLOY_ENABLED",
+      expect.objectContaining({
+        requestId: "request-123",
+        repository: "cedarville-it/campus-dashboard",
+        commitSha: "commit-sha",
+      }),
+    );
+  });
+
+  it("refuses to overwrite unrecognized workflow content", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "request-123",
+      userId: "user-123",
+      sourceOfTruth: "PORTAL_MANAGED_REPO",
+      repositoryStatus: "READY",
+      publishStatus: "SUCCEEDED",
+      deploymentTarget: "Azure App Service",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      deploymentTriggerMode: "PORTAL_DISPATCH",
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    mockGithub.readRepositoryTextFiles.mockResolvedValue({
+      ".github/workflows/deploy-azure-app-service.yml": "name: Custom\n",
+    });
+
+    await expect(enablePushToDeployAction("request-123")).rejects.toThrow(
+      "Deployment workflow is not a recognized portal-managed Azure workflow.",
+    );
+
+    expect(mockGithub.commitFiles).not.toHaveBeenCalled();
+    expect(prisma.appRequest.update).not.toHaveBeenCalledWith({
+      where: { id: "request-123" },
+      data: expect.objectContaining({
+        deploymentTriggerMode: "PUSH_TO_DEPLOY",
+      }),
+    });
   });
 });
