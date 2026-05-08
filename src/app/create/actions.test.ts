@@ -4,6 +4,7 @@ import { buildArchive } from "@/features/generation/build-archive";
 import { deleteArtifact, saveArtifact } from "@/features/generation/storage";
 import { grantManagedRepositoryAccess } from "@/features/repositories/access";
 import { bootstrapManagedRepository } from "@/features/repositories/bootstrap-managed-repository";
+import { publishToAzureAction } from "@/features/publishing/actions";
 import { prisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
 import { createAppAction, extractCreateAppInput } from "./actions";
@@ -39,6 +40,10 @@ vi.mock("@/features/repositories/access", () => ({
   grantManagedRepositoryAccess: vi.fn(),
 }));
 
+vi.mock("@/features/publishing/actions", () => ({
+  publishToAzureAction: vi.fn(),
+}));
+
 vi.mock("@/lib/db", () => ({
   prisma: {
     user: {
@@ -65,6 +70,7 @@ describe("extractCreateAppInput", () => {
     vi.mocked(saveArtifact).mockReset();
     vi.mocked(grantManagedRepositoryAccess).mockReset();
     vi.mocked(bootstrapManagedRepository).mockReset();
+    vi.mocked(publishToAzureAction).mockReset();
     vi.mocked(recordAuditEvent).mockReset();
     vi.mocked(resolveCurrentUserId).mockReset();
     vi.mocked(prisma.template.upsert).mockReset();
@@ -110,6 +116,7 @@ describe("createAppAction", () => {
     vi.mocked(saveArtifact).mockReset();
     vi.mocked(grantManagedRepositoryAccess).mockReset();
     vi.mocked(bootstrapManagedRepository).mockReset();
+    vi.mocked(publishToAzureAction).mockReset();
     vi.mocked(recordAuditEvent).mockReset();
     vi.mocked(resolveCurrentUserId).mockReset();
     vi.mocked(prisma.template.upsert).mockReset();
@@ -209,6 +216,93 @@ describe("createAppAction", () => {
       expect.objectContaining({ requestId: "request-123" }),
     );
     expect(mockRedirect).toHaveBeenCalledWith("/download/request-123");
+  });
+
+  it("queues publishing after generated repository bootstrap when requested", async () => {
+    const formData = new FormData();
+    formData.set("templateSlug", "web-app");
+    formData.set("appName", "Campus Dashboard");
+    formData.set("description", "Shows campus metrics.");
+    formData.set("hostingTarget", "Azure App Service");
+    formData.set("createIntent", "createAndPublish");
+
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: null,
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+    vi.mocked(prisma.template.upsert).mockResolvedValue({
+      id: "template-db-123",
+    } as Awaited<ReturnType<typeof prisma.template.upsert>>);
+    vi.mocked(prisma.appRequest.create).mockResolvedValue({
+      id: "request-123",
+    } as Awaited<ReturnType<typeof prisma.appRequest.create>>);
+    vi.mocked(buildArchive).mockResolvedValue({
+      buffer: Buffer.from("zip"),
+      files: {
+        "README.md": "# Campus Dashboard\n",
+      },
+      filename: "campus-dashboard.zip",
+    });
+    vi.mocked(saveArtifact).mockResolvedValue(
+      "/tmp/.artifacts/campus-dashboard.zip",
+    );
+    vi.mocked(prisma.generatedArtifact.create).mockResolvedValue({
+      id: "artifact-123",
+    } as Awaited<ReturnType<typeof prisma.generatedArtifact.create>>);
+    vi.mocked(bootstrapManagedRepository).mockResolvedValue({
+      provider: "GITHUB",
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      url: "https://github.com/cedarville-it/campus-dashboard",
+      defaultBranch: "main",
+      visibility: "private",
+    });
+
+    await createAppAction(formData);
+
+    expect(publishToAzureAction).toHaveBeenCalledWith("request-123");
+    expect(mockRedirect).toHaveBeenCalledWith("/download/request-123");
+  });
+
+  it("skips one-step publishing when repository bootstrap fails", async () => {
+    const formData = new FormData();
+    formData.set("templateSlug", "web-app");
+    formData.set("appName", "Campus Dashboard");
+    formData.set("description", "Shows campus metrics.");
+    formData.set("hostingTarget", "Azure App Service");
+    formData.set("createIntent", "createAndPublish");
+
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: null,
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+    vi.mocked(prisma.template.upsert).mockResolvedValue({
+      id: "template-db-123",
+    } as Awaited<ReturnType<typeof prisma.template.upsert>>);
+    vi.mocked(prisma.appRequest.create).mockResolvedValue({
+      id: "request-789",
+    } as Awaited<ReturnType<typeof prisma.appRequest.create>>);
+    vi.mocked(buildArchive).mockResolvedValue({
+      buffer: Buffer.from("zip"),
+      files: {
+        "README.md": "# Campus Dashboard\n",
+      },
+      filename: "campus-dashboard.zip",
+    });
+    vi.mocked(saveArtifact).mockResolvedValue(
+      "/tmp/.artifacts/campus-dashboard.zip",
+    );
+    vi.mocked(prisma.generatedArtifact.create).mockResolvedValue({
+      id: "artifact-123",
+    } as Awaited<ReturnType<typeof prisma.generatedArtifact.create>>);
+    vi.mocked(bootstrapManagedRepository).mockRejectedValue(
+      new Error("missing GitHub app config"),
+    );
+
+    await createAppAction(formData);
+
+    expect(publishToAzureAction).not.toHaveBeenCalled();
+    expect(mockRedirect).toHaveBeenCalledWith("/download/request-789");
   });
 
   it("does not mark generation failed when Next redirects after success", async () => {

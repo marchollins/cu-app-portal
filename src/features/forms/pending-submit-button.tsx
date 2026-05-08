@@ -9,6 +9,8 @@ export function PendingSubmitButton({
   statusText,
   variant = "primary-solid",
   size,
+  name,
+  value,
 }: {
   idleLabel: string;
   pendingLabel: string;
@@ -21,6 +23,8 @@ export function PendingSubmitButton({
     | "danger"
     | "ghost";
   size?: "sm" | "lg";
+  name?: string;
+  value?: string;
 }) {
   const { pending } = useFormStatus();
   const sizeClass = size ? ` btn--${size}` : "";
@@ -29,6 +33,8 @@ export function PendingSubmitButton({
     <>
       <button
         type="submit"
+        name={name}
+        value={value}
         disabled={pending}
         className={`btn btn--${variant}${sizeClass}`}
       >

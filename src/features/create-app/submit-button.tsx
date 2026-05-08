@@ -1,12 +1,31 @@
 import React from "react";
 import { PendingSubmitButton } from "@/features/forms/pending-submit-button";
 
-export function SubmitButton() {
+type SubmitButtonProps = {
+  idleLabel?: string;
+  pendingLabel?: string;
+  statusText?: string;
+  variant?: "primary-solid" | "secondary-solid";
+  name?: string;
+  value?: string;
+};
+
+export function SubmitButton({
+  idleLabel = "Create App",
+  pendingLabel = "Creating...",
+  statusText = "Creating your app package. This can take a moment.",
+  variant = "primary-solid",
+  name = "createIntent",
+  value = "createOnly",
+}: SubmitButtonProps) {
   return (
     <PendingSubmitButton
-      idleLabel="Generate App Package"
-      pendingLabel="Generating..."
-      statusText="Generating your app package. This can take a moment."
+      idleLabel={idleLabel}
+      pendingLabel={pendingLabel}
+      statusText={statusText}
+      variant={variant}
+      name={name}
+      value={value}
     />
   );
 }
