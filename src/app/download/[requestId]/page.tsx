@@ -59,6 +59,35 @@ function isImportedRepositoryPrepared(
   );
 }
 
+function getImportedRepositoryRemoteWorkflow({
+  repositoryImport,
+  repositoryUrl,
+  repositoryDefaultBranch,
+}: {
+  repositoryImport: {
+    importStatus?: string | null;
+    sourceRepositoryUrl?: string | null;
+  } | null;
+  repositoryUrl: string | null;
+  repositoryDefaultBranch?: string | null;
+}) {
+  if (
+    !repositoryUrl ||
+    repositoryImport?.importStatus !== "SUCCEEDED" ||
+    !repositoryImport.sourceRepositoryUrl
+  ) {
+    return null;
+  }
+
+  const defaultBranch = repositoryDefaultBranch ?? "main";
+
+  return {
+    defaultBranch,
+    portalRepositoryUrl: repositoryUrl,
+    sourceRepositoryUrl: repositoryImport.sourceRepositoryUrl,
+  };
+}
+
 function renderImportedRepositoryStatus({
   requestId,
   repositoryImport,
@@ -332,6 +361,11 @@ export default async function DownloadPage({
     appRequest.publishUrl,
   );
   const pub = publishBadge(appRequest.publishStatus);
+  const importedRepositoryRemoteWorkflow = getImportedRepositoryRemoteWorkflow({
+    repositoryImport: appRequest.repositoryImport,
+    repositoryUrl: appRequest.repositoryUrl,
+    repositoryDefaultBranch: appRequest.repositoryDefaultBranch,
+  });
 
   return (
     <main>
@@ -402,6 +436,12 @@ export default async function DownloadPage({
                   appRequest.repositoryUrl,
                   appRequest.appName,
                   requestId,
+                  {
+                    defaultBranch:
+                      importedRepositoryRemoteWorkflow?.defaultBranch,
+                    sourceRepositoryUrl:
+                      importedRepositoryRemoteWorkflow?.sourceRepositoryUrl,
+                  },
                 )}
               />
             </>
@@ -505,6 +545,42 @@ export default async function DownloadPage({
               repositoryImport: appRequest.repositoryImport,
             })
           : null}
+
+        {importedRepositoryRemoteWorkflow ? (
+          <div className="card">
+            <p className="section-title">Imported Repository Workflow</p>
+            <p>
+              Your local clone may still have origin pointed at the original
+              source repo. Keep that remote intact and add the portal-managed
+              repository as the publishing remote.
+            </p>
+            <ol className="step-list">
+              <li>
+                Add the portal remote:{" "}
+                <code>
+                  git remote add portal{" "}
+                  {importedRepositoryRemoteWorkflow.portalRepositoryUrl}
+                </code>
+              </li>
+              <li>
+                Fetch portal updates: <code>git fetch portal</code>
+              </li>
+              <li>
+                Pull portal changes before publishing work:{" "}
+                <code>
+                  git pull portal {importedRepositoryRemoteWorkflow.defaultBranch}
+                </code>
+              </li>
+              <li>
+                Push completed work to the portal repo:{" "}
+                <code>
+                  git push portal HEAD:
+                  {importedRepositoryRemoteWorkflow.defaultBranch}
+                </code>
+              </li>
+            </ol>
+          </div>
+        ) : null}
 
         {/* Codex workflow steps */}
         {!isImportedApp ? (

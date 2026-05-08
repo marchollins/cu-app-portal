@@ -1,4 +1,11 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DownloadPage from "./page";
 
@@ -52,6 +59,12 @@ import { prisma } from "@/lib/db";
 
 beforeEach(() => {
   mockUseFormStatus.mockReturnValue({ pending: false });
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: vi.fn().mockResolvedValue(undefined),
+    },
+  });
 });
 
 afterEach(() => {
@@ -411,6 +424,7 @@ describe("DownloadPage", () => {
       id: "req_import_ready",
       appName: "Campus Dashboard",
       sourceOfTruth: "IMPORTED_REPOSITORY",
+      repositoryDefaultBranch: "trunk",
       repositoryStatus: "READY",
       repositoryAccessStatus: "GRANTED",
       repositoryAccessNote: null,
@@ -421,6 +435,8 @@ describe("DownloadPage", () => {
       azureWebAppName: null,
       publishErrorSummary: null,
       repositoryImport: {
+        sourceRepositoryUrl: "https://github.com/example/campus-dashboard",
+        importStatus: "SUCCEEDED",
         preparationStatus: "COMMITTED",
       },
       artifact: {
@@ -441,11 +457,41 @@ describe("DownloadPage", () => {
     expect(
       screen.getByRole("button", { name: /publish to azure/i }),
     ).toBeInTheDocument();
+    expect(screen.getByText("Imported Repository Workflow")).toBeInTheDocument();
+    expect(
+      screen.getByText(/your local clone may still have origin pointed at/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "git remote add portal https://github.com/cedarville-it/campus-dashboard",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("git fetch portal")).toBeInTheDocument();
+    expect(screen.getByText("git pull portal trunk")).toBeInTheDocument();
+    expect(screen.getByText("git push portal HEAD:trunk")).toBeInTheDocument();
     expect(
       screen.queryByText(
         /azure publishing unavailable until repository preparation is committed/i,
       ),
     ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /copy codex handoff prompt/i }),
+    );
+
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "git remote add portal https://github.com/cedarville-it/campus-dashboard",
+        ),
+      );
+    });
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      expect.stringContaining("git pull portal trunk"),
+    );
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      expect.stringContaining("git push portal HEAD:trunk"),
+    );
   });
 
   it("shows Azure publish and workflow metadata when present", async () => {

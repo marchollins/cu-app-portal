@@ -620,6 +620,14 @@ export default async function MyAppsPage() {
                           request.repositoryUrl,
                           request.appName,
                           request.id,
+                          {
+                            defaultBranch: request.repositoryDefaultBranch,
+                            sourceRepositoryUrl:
+                              request.repositoryImport?.importStatus ===
+                              "SUCCEEDED"
+                                ? request.repositoryImport.sourceRepositoryUrl
+                                : null,
+                          },
                         )}
                       />
                     ) : null}
