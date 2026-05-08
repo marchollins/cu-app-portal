@@ -43,6 +43,7 @@ model AppRequest {
   supportReference String
   visibility       String?
   deploymentTarget String?
+  deploymentTriggerMode DeploymentTriggerMode @default(PORTAL_DISPATCH)
   sourceOfTruth    SourceOfTruth      @default(PORTAL_MANAGED_REPO)
   repositoryProvider RepositoryProvider?
   repositoryOwner  String?
@@ -143,6 +144,11 @@ enum GenerationStatus {
 enum SourceOfTruth {
   PORTAL_MANAGED_REPO
   IMPORTED_REPOSITORY
+}
+
+enum DeploymentTriggerMode {
+  PORTAL_DISPATCH
+  PUSH_TO_DEPLOY
 }
 
 enum RepositoryProvider {
