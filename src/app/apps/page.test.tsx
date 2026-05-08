@@ -18,6 +18,7 @@ vi.mock("@/features/app-requests/current-user", () => ({
 }));
 
 vi.mock("@/features/publishing/actions", () => ({
+  enablePushToDeployAction: vi.fn(),
   publishToAzureAction: vi.fn(),
   retryPublishAction: vi.fn(),
 }));
@@ -684,6 +685,82 @@ describe("MyAppsPage", () => {
       "href",
       "https://github.com/cedarville-it/campus-dashboard/actions/runs/123",
     );
+  });
+
+  it("shows push-to-deploy enablement for successfully published generated apps", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
+      {
+        id: "req_push",
+        appName: "Campus Dashboard",
+        generationStatus: "SUCCEEDED",
+        sourceOfTruth: "PORTAL_MANAGED_REPO",
+        repositoryStatus: "READY",
+        repositoryAccessStatus: "GRANTED",
+        repositoryAccessNote: null,
+        publishStatus: "SUCCEEDED",
+        deploymentTarget: "Azure App Service",
+        deploymentTriggerMode: "PORTAL_DISPATCH",
+        repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
+        repositoryDefaultBranch: "main",
+        publishUrl: "https://app-campus-dashboard.azurewebsites.net",
+        primaryPublishUrl: "https://app-campus-dashboard.azurewebsites.net",
+        azureWebAppName: "app-campus-dashboard-clx9abc1",
+        azureDatabaseName: "db_campus_dashboard_clx9abc1",
+        repositoryImport: null,
+        publishAttempts: [],
+      },
+    ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(await MyAppsPage());
+
+    expect(screen.getByText("Deployment mode: portal dispatch")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /enable push-to-deploy/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows enabled push-to-deploy mode without the enable action", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
+      {
+        id: "req_push_enabled",
+        appName: "Campus Dashboard",
+        generationStatus: "SUCCEEDED",
+        sourceOfTruth: "PORTAL_MANAGED_REPO",
+        repositoryStatus: "READY",
+        repositoryAccessStatus: "GRANTED",
+        repositoryAccessNote: null,
+        publishStatus: "SUCCEEDED",
+        deploymentTarget: "Azure App Service",
+        deploymentTriggerMode: "PUSH_TO_DEPLOY",
+        repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
+        repositoryDefaultBranch: "main",
+        publishUrl: "https://app-campus-dashboard.azurewebsites.net",
+        primaryPublishUrl: "https://app-campus-dashboard.azurewebsites.net",
+        azureWebAppName: "app-campus-dashboard-clx9abc1",
+        azureDatabaseName: "db_campus_dashboard_clx9abc1",
+        repositoryImport: null,
+        publishAttempts: [],
+      },
+    ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(await MyAppsPage());
+
+    expect(screen.getByText("Deployment mode: push to deploy")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /enable push-to-deploy/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows a repo retry action when managed repo bootstrap failed", async () => {

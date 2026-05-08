@@ -4,9 +4,11 @@ import { redirect } from "next/navigation";
 import { deleteAppAction } from "@/features/app-deletion/actions";
 import { getCurrentUserIdOrNull } from "@/features/app-requests/current-user";
 import {
+  enablePushToDeployAction,
   publishToAzureAction,
   retryPublishAction,
 } from "@/features/publishing/actions";
+import { supportsPostSuccessPushToDeploy } from "@/features/publishing/providers";
 import {
   retryRepositoryBootstrapAction,
   saveGitHubUsernameAndGrantAccessAction,
@@ -60,6 +62,10 @@ function getDisplayPublishUrl(
   publishUrl: string | null,
 ) {
   return publishUrl ?? primaryPublishUrl;
+}
+
+function formatDeploymentMode(mode: string | null | undefined) {
+  return mode === "PUSH_TO_DEPLOY" ? "push to deploy" : "portal dispatch";
 }
 
 function renderActionButton(
@@ -147,6 +153,40 @@ function renderActionButton(
     <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
       Publish in progress…
     </span>
+  );
+}
+
+function renderPushToDeployButton(request: {
+  id: string;
+  sourceOfTruth?: string | null;
+  repositoryStatus: string;
+  publishStatus: string;
+  deploymentTarget?: string | null;
+  deploymentTriggerMode?: string | null;
+}) {
+  if (
+    request.sourceOfTruth !== "PORTAL_MANAGED_REPO" ||
+    request.repositoryStatus !== "READY" ||
+    request.publishStatus !== "SUCCEEDED" ||
+    request.deploymentTriggerMode === "PUSH_TO_DEPLOY" ||
+    !request.deploymentTarget ||
+    !supportsPostSuccessPushToDeploy(request.deploymentTarget)
+  ) {
+    return null;
+  }
+
+  const enableAction = enablePushToDeployAction.bind(null, request.id);
+
+  return (
+    <form action={enableAction}>
+      <PendingSubmitButton
+        idleLabel="Enable push-to-deploy"
+        pendingLabel="Enabling..."
+        statusText="Enabling push-to-deploy for future default branch commits."
+        variant="ghost"
+        size="sm"
+      />
+    </form>
   );
 }
 
@@ -520,6 +560,12 @@ export default async function MyAppsPage() {
                         </a>
                       </div>
                     ) : null}
+                    {request.sourceOfTruth === "PORTAL_MANAGED_REPO" ? (
+                      <div className="status-row">
+                        Deployment mode:{" "}
+                        {formatDeploymentMode(request.deploymentTriggerMode)}
+                      </div>
+                    ) : null}
                     {request.azureWebAppName ? (
                       <div className="status-row">
                         Azure app: {request.azureWebAppName}
@@ -638,6 +684,14 @@ export default async function MyAppsPage() {
                       request.sourceOfTruth,
                       request.repositoryImport?.preparationStatus,
                     )}
+                    {renderPushToDeployButton({
+                      id: request.id,
+                      sourceOfTruth: request.sourceOfTruth,
+                      repositoryStatus: request.repositoryStatus,
+                      publishStatus: request.publishStatus,
+                      deploymentTarget: request.deploymentTarget,
+                      deploymentTriggerMode: request.deploymentTriggerMode,
+                    })}
                   </div>
 
                   {renderDeletePanel({
