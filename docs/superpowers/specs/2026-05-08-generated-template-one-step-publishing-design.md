@@ -9,6 +9,8 @@ The portal should let a Cedarville user choose either:
 - `Create App`: generate the app, create the managed GitHub repository, and stop before Azure publishing.
 - `Create and Publish`: generate the app, create the managed GitHub repository, provision Azure, wire deployment settings, dispatch the deployment workflow, and show publish progress.
 
+After Azure publishing succeeds, the portal should offer generated-template app owners a direct `Enable push-to-deploy` action. That action changes the generated repository workflow so future pushes to the default branch deploy automatically.
+
 The first implementation is scoped to generated template apps. Existing/imported app publishing keeps its current preparation gates because those repositories can contain existing workflows, conflicting files, or app-specific decisions that need review.
 
 ## Product Decisions
@@ -16,6 +18,8 @@ The first implementation is scoped to generated template apps. Existing/imported
 Generated template apps are safe candidates for one-step publishing because the portal controls the source snapshot. The portal can render the repository, choose the deployment files, and know whether the selected hosting target has an automated publisher.
 
 The current two-step flow remains available because some users will want to inspect or edit the generated repository before publishing. The one-step path is an opt-in submit intent, not the only way to create an app.
+
+Push-to-deploy is also opt-in. The initial deployment must be portal-dispatched so the portal can prove Azure resources, App Service settings, GitHub OIDC, and GitHub Actions secrets are correct before GitHub receives an automatic deployment trigger.
 
 The portal remains the system of record. GitHub is the source repository, but the portal owns the lifecycle state, publish attempts, Azure target names, deployment status, and retry behavior.
 
@@ -41,6 +45,8 @@ push:
 This prevents GitHub from starting a deployment immediately after the repository is created. The first deployment run must be started intentionally by the portal after all required Azure resources, app settings, federated credentials, and GitHub Actions secrets are in place.
 
 The portal should not rely on commit-message skip markers, temporarily disabled workflows, or a failed first run as part of the normal path. Those options are more brittle than making the workflow manual-only and dispatching it when ready.
+
+After a successful portal-dispatched deployment, the portal may update the workflow to add a default-branch `push` trigger while keeping `workflow_dispatch`.
 
 ## One-Step Flow
 
@@ -73,6 +79,42 @@ When a user submits `Create App`, the portal keeps today's generated-app behavio
 
 Because the workflow is manual-only, future commits to the generated repository will not deploy automatically. Users publish through the portal, which ensures deployment settings are correct before dispatching a workflow run.
 
+## Push-To-Deploy Opt-In
+
+After a generated-template app has successfully published to Azure, the portal should show an `Enable push-to-deploy` action.
+
+The action is available only when:
+
+- the current user owns the app request
+- `sourceOfTruth` is `PORTAL_MANAGED_REPO`
+- the managed repository is `READY`
+- the publish status is `SUCCEEDED`
+- the selected hosting provider supports post-success push-to-deploy
+- the repository default branch is known
+- the deployment workflow is still in a portal-managed shape that can be safely updated
+
+For generated template apps, enabling push-to-deploy should be a direct commit to the managed repository's default branch. A PR is not required because the portal owns the generated workflow, and the action is available only after a successful deployment has already proven the deployment wiring.
+
+The direct commit should make one narrow repository change:
+
+- update `.github/workflows/deploy-azure-app-service.yml`
+- keep `workflow_dispatch`
+- add a `push` trigger for the repository default branch
+
+For a `main` default branch, the resulting trigger should be:
+
+```yaml
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+```
+
+The portal should verify the current workflow before committing. If the workflow is missing, already customized, or not recognizably portal-managed, the action should fail with a clear message instead of overwriting user changes.
+
+After push-to-deploy is enabled, GitHub Actions owns automatic deployments triggered by future default-branch pushes. The portal should still show the known publish URL and deployment mode, and users can still run manual portal publishes for retries or explicit redeploys when that remains safe for the provider.
+
 ## Hosting Provider Plumbing
 
 The UX should stay target-based rather than Azure-specific at the create boundary.
@@ -87,6 +129,7 @@ type WorkflowTriggerPolicy = "portal_dispatch" | "push" | "external";
 type PublishingProviderCapabilities = {
   hostingTarget: string;
   supportsGeneratedTemplateOneStep: boolean;
+  supportsPostSuccessPushToDeploy: boolean;
   triggerPolicy: WorkflowTriggerPolicy;
   requiredRepositoryFiles: string[];
   requiredSecrets: string[];
@@ -98,10 +141,13 @@ For Azure App Service v1:
 ```txt
 hostingTarget=Azure App Service
 supportsGeneratedTemplateOneStep=true
+supportsPostSuccessPushToDeploy=true
 triggerPolicy=portal_dispatch
 ```
 
 The create UI can show `Create and Publish` only when the selected template and hosting target support one-step publishing. Future providers can add their own preparation and dispatch strategy without changing the generated app lifecycle.
+
+The post-success UI can show `Enable push-to-deploy` only when the provider supports transitioning from `portal_dispatch` to `push` after a successful deployment. A future provider may never support that transition, or may require a different repository update.
 
 ## Data And State
 
@@ -114,12 +160,20 @@ createOnly
 createAndPublish
 ```
 
+The implementation should also track the active deployment trigger mode, either on `AppRequest` or in provider-specific publishing state:
+
+```txt
+PORTAL_DISPATCH
+PUSH_TO_DEPLOY
+```
+
 The app request should still record:
 
 - source-of-truth mode
 - hosting target
 - repository status and coordinates
 - publish status
+- active deployment trigger mode
 - Azure target state
 - latest publish error summary
 
@@ -141,6 +195,8 @@ The worker should fail before workflow dispatch when required deployment prerequ
 
 This keeps the first GitHub Actions run meaningful. Failed workflow runs should indicate build or deployment problems, not missing portal-managed setup.
 
+Push-to-deploy enablement should fail safely before committing when the workflow cannot be patched without overwriting user changes. The failure should not change the app's successful publish status or remove the existing manual publish path.
+
 ## Existing Apps
 
 Existing/imported app workflows remain separate.
@@ -159,11 +215,16 @@ Unit tests should cover:
 - create-and-publish queues a publish attempt after repository bootstrap succeeds
 - create-and-publish does not queue publish when repository bootstrap fails
 - provider capability gating for `Create and Publish`
+- provider capability gating for `Enable push-to-deploy`
+- workflow patching from manual-only to manual-plus-push
+- push-to-deploy enablement refusing unrecognized workflow content
 
 Server action tests should verify:
 
 - create-only leaves publish status `NOT_STARTED`
 - create-and-publish moves publish status to `QUEUED` after repository readiness
+- push-to-deploy enablement is available only after successful generated-app publish
+- push-to-deploy enablement commits directly to the managed repo default branch
 - existing/imported app preparation rules are unchanged
 - publish worker receives the same app request path used by manual `Publish to Azure`
 
@@ -172,6 +233,8 @@ Page tests should verify:
 - generated template forms show both create actions when the hosting target supports one-step publishing
 - unsupported hosting targets hide or disable `Create and Publish`
 - status pages show repo and publish progress without requiring a second user action
+- successful generated-template apps show `Enable push-to-deploy` until it is enabled
+- enabled apps show push-to-deploy as the active deployment mode
 
 Targeted integration or e2e coverage should verify that initial repository creation does not trigger an automatic GitHub Actions deployment from a `push` event.
 
@@ -182,14 +245,17 @@ In scope:
 - add the create submit intent
 - make the generated Azure workflow manual-dispatch only
 - queue the existing publish worker after successful generated repo bootstrap
+- add post-success push-to-deploy enablement for generated template apps
+- commit the default-branch workflow trigger update directly for recognized portal-managed workflows
 - add provider capability plumbing for hosting-target gating
 - update generated-app docs to describe portal-dispatched deployment
-- add focused tests for the new path and trigger policy
+- add focused tests for the new path, trigger policy, and push-to-deploy transition
 
 Out of scope:
 
 - one-step publishing for existing/imported apps
-- push-to-deploy for generated apps
+- push-to-deploy for existing/imported apps
+- automatic portal status syncing for GitHub push-triggered workflow runs
 - custom domain automation
 - additional hosting providers
 - replacing the existing Azure publish runtime
