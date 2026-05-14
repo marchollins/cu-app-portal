@@ -1222,6 +1222,63 @@ describe("repository import actions", () => {
     expect(preflightPublishingSetup).toHaveBeenCalledWith("req_verify");
   });
 
+  it("marks publishing setup as needing repair when verification preflight fails", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_verify_preflight_failed",
+      userId: "user-123",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      repositoryImport: {
+        id: "import_verify_preflight_failed",
+        preparationStatus: "PULL_REQUEST_OPENED",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(preflightPublishingSetup).mockRejectedValue(
+      new Error("Workflow dispatch is not configured."),
+    );
+    const github = {
+      readRepositoryTextFiles: vi.fn().mockResolvedValue({
+        "package.json": readyPackageJson,
+        ...Object.fromEntries(
+          PUBLISHING_BUNDLE_PATHS.map((path) => [path, "content"]),
+        ),
+      }),
+    };
+
+    await expect(
+      verifyExistingAppPreparationAction("req_verify_preflight_failed", {
+        github,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(prisma.repositoryImport.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "import_verify_preflight_failed",
+        preparationStatus: "PULL_REQUEST_OPENED",
+      },
+      data: {
+        preparationStatus: "COMMITTED",
+        preparationErrorSummary: null,
+      },
+    });
+    expect(preflightPublishingSetup).toHaveBeenCalledWith(
+      "req_verify_preflight_failed",
+    );
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "req_verify_preflight_failed" },
+      data: {
+        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupErrorSummary: "Workflow dispatch is not configured.",
+      },
+    });
+    expect(revalidatePath).toHaveBeenCalledWith("/apps");
+    expect(revalidatePath).toHaveBeenCalledWith(
+      "/download/req_verify_preflight_failed",
+    );
+  });
+
   it("marks conflict-blocked repositories committed when required publishing files reach the default branch", async () => {
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
