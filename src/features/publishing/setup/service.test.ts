@@ -231,11 +231,25 @@ describe("publishing setup service", () => {
   it.each([
     ["inline scalar", "name: Deploy\non: workflow_dispatch\n"],
     ["inline sequence", "name: Deploy\non: [workflow_dispatch, push]\n"],
+    ["double-quoted on key", 'name: Deploy\n"on":\n  workflow_dispatch:\n'],
+    ["single-quoted on key", "name: Deploy\n'on':\n  workflow_dispatch:\n"],
     [
       "indented mapping",
       "name: Deploy\non:\n  workflow_dispatch:\n  push:\n    branches: [main]\n",
     ],
     ["indented scalar", "name: Deploy\non:\n  workflow_dispatch\n"],
+    [
+      "block sequence",
+      "name: Deploy\non:\n  - workflow_dispatch\n  - push\n",
+    ],
+    [
+      "quoted direct child mapping",
+      'name: Deploy\non:\n  "workflow_dispatch":\n',
+    ],
+    [
+      "quoted block sequence item",
+      'name: Deploy\non:\n  - "workflow_dispatch"\n  - push\n',
+    ],
   ])("accepts top-level workflow dispatch trigger via %s", async (_label, workflow) => {
     const baseDeps = createDeps();
     const deps = createDeps({

@@ -523,8 +523,9 @@ function stripYamlComment(line: string) {
 
 function inlineOnValueHasWorkflowDispatch(value: string) {
   const trimmed = value.trim();
+  const unquoted = trimmed.replace(/^["']|["']$/g, "");
 
-  if (trimmed === "workflow_dispatch") {
+  if (unquoted === "workflow_dispatch") {
     return true;
   }
 
@@ -541,6 +542,12 @@ function inlineOnValueHasWorkflowDispatch(value: string) {
   return false;
 }
 
+function directOnChildIsWorkflowDispatch(trimmed: string) {
+  const item = trimmed.replace(/^-\s*/, "").replace(/\s*:\s*$/, "");
+
+  return item.replace(/^["']|["']$/g, "") === "workflow_dispatch";
+}
+
 function hasTopLevelWorkflowDispatchTrigger(workflow: string) {
   const lines = workflow.split(/\r?\n/);
 
@@ -555,7 +562,7 @@ function hasTopLevelWorkflowDispatchTrigger(workflow: string) {
       continue;
     }
 
-    const onMatch = line.match(/^on\s*:\s*(.*)$/);
+    const onMatch = line.match(/^(?:"on"|'on'|on)\s*:\s*(.*)$/);
 
     if (!onMatch) {
       continue;
@@ -595,7 +602,7 @@ function hasTopLevelWorkflowDispatchTrigger(workflow: string) {
         continue;
       }
 
-      if (/^workflow_dispatch\s*:?\s*$/.test(trimmed)) {
+      if (directOnChildIsWorkflowDispatch(trimmed)) {
         return true;
       }
     }
