@@ -267,6 +267,10 @@ describe("publishing setup service", () => {
       "nested job env",
       "name: Deploy\non:\n  push:\n    branches: [main]\njobs:\n  deploy:\n    env:\n      EVENT_NAME: workflow_dispatch:\n",
     ],
+    [
+      "nested under push",
+      "name: Deploy\non:\n  push:\n    branches: [main]\n    workflow_dispatch:\n",
+    ],
   ])("does not accept %s as workflow dispatch proof", async (_label, workflow) => {
     const baseDeps = createDeps();
     const deps = createDeps({

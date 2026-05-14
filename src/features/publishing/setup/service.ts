@@ -569,6 +569,8 @@ function hasTopLevelWorkflowDispatchTrigger(workflow: string) {
       return false;
     }
 
+    let directChildIndent: number | null = null;
+
     for (let nestedIndex = index + 1; nestedIndex < lines.length; nestedIndex += 1) {
       const nestedLine = stripYamlComment(lines[nestedIndex]);
       const trimmed = nestedLine.trim();
@@ -581,6 +583,16 @@ function hasTopLevelWorkflowDispatchTrigger(workflow: string) {
 
       if (indent === 0) {
         return false;
+      }
+
+      directChildIndent ??= indent;
+
+      if (indent < directChildIndent) {
+        return false;
+      }
+
+      if (indent > directChildIndent) {
+        continue;
       }
 
       if (/^workflow_dispatch\s*:?\s*$/.test(trimmed)) {
