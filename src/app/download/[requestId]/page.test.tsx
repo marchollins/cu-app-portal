@@ -194,6 +194,78 @@ describe("DownloadPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows repair instead of publish actions when publishing setup needs repair", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_setup_repair",
+      appName: "Campus Dashboard",
+      sourceOfTruth: "PORTAL_MANAGED_REPO",
+      repositoryStatus: "READY",
+      repositoryAccessStatus: "GRANTED",
+      repositoryAccessNote: null,
+      repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+      publishStatus: "FAILED",
+      publishErrorSummary:
+        "Publishing setup failed: Publishing credentials are out of date and need to be refreshed.",
+      publishingSetupStatus: "NEEDS_REPAIR",
+      publishingSetupErrorSummary:
+        "Publishing credentials are out of date and need to be refreshed.",
+      publishUrl: null,
+      primaryPublishUrl: null,
+      azureWebAppName: null,
+      repositoryImport: null,
+      artifact: {
+        id: "artifact-setup-repair",
+      },
+      publishAttempts: [],
+      publishSetupChecks: [
+        {
+          checkKey: "github_actions_secrets",
+          status: "FAIL",
+          message: "Required GitHub Actions secrets are missing.",
+        },
+      ],
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(
+      await DownloadPage({
+        params: Promise.resolve({ requestId: "req_setup_repair" }),
+      }),
+    );
+
+    const setupStatus = screen.getByRole("region", {
+      name: /publishing setup status/i,
+    });
+    expect(
+      within(setupStatus).getByText(/setup: needs repair/i),
+    ).toBeInTheDocument();
+    expect(
+      within(setupStatus).getByText(/publishing credentials are out of date/i),
+    ).toBeInTheDocument();
+    expect(
+      within(setupStatus).getByText(
+        /github actions secrets: fail - required github actions secrets are missing/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(setupStatus).getByRole("button", {
+        name: /repair publishing setup/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/repair publishing setup before publishing/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /publish to azure/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /retry publish/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows imported app details even when no generated artifact exists", async () => {
     vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
