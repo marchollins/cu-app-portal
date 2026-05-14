@@ -8,6 +8,7 @@ import {
   publishToAzureAction,
   retryPublishAction,
 } from "@/features/publishing/actions";
+import { repairPublishingSetupAction } from "@/features/publishing/setup/actions";
 import { supportsPostSuccessPushToDeploy } from "@/features/publishing/providers";
 import {
   retryRepositoryBootstrapAction,
@@ -27,7 +28,11 @@ const PREPARATION_REQUIRED_MESSAGE =
 
 type BadgeVariant = "success" | "error" | "warning" | "info" | "default";
 
-function statusBadge(status: string): { label: string; variant: BadgeVariant } {
+function statusBadge(
+  status: string | null | undefined,
+): { label: string; variant: BadgeVariant } {
+  if (!status) return { label: "Not checked", variant: "default" };
+
   const s = status.toLowerCase();
   if (
     s === "ready" ||
@@ -38,8 +43,14 @@ function statusBadge(status: string): { label: string; variant: BadgeVariant } {
     return { label: formatStatus(status), variant: "success" };
   }
   if (s === "failed") return { label: "Failed", variant: "error" };
+  if (s === "blocked") return { label: "Blocked", variant: "error" };
+  if (s === "needs_repair") return { label: "Needs repair", variant: "warning" };
+  if (s === "checking" || s === "repairing") {
+    return { label: formatStatus(status), variant: "warning" };
+  }
   if (s === "deleted") return { label: "Deleted", variant: "default" };
   if (s === "not_started") return { label: "Not started", variant: "default" };
+  if (s === "not_checked") return { label: "Not checked", variant: "default" };
   if (s === "invited") return { label: "Invited", variant: "info" };
   return { label: formatStatus(status), variant: "info" };
 }
@@ -72,6 +83,7 @@ function renderActionButton(
   requestId: string,
   repositoryStatus: string,
   publishStatus: string,
+  publishingSetupStatus?: string | null,
   sourceOfTruth?: string,
   preparationStatus?: string | null,
 ) {
@@ -109,6 +121,14 @@ function renderActionButton(
     return (
       <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
         {PREPARATION_REQUIRED_MESSAGE}
+      </span>
+    );
+  }
+
+  if (needsPublishingSetupRepair(publishingSetupStatus)) {
+    return (
+      <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+        Repair publishing setup before publishing.
       </span>
     );
   }
@@ -187,6 +207,57 @@ function renderPushToDeployButton(request: {
         size="sm"
       />
     </form>
+  );
+}
+
+function needsPublishingSetupRepair(status: string | null | undefined) {
+  return status === "NEEDS_REPAIR" || status === "BLOCKED";
+}
+
+function renderPublishingSetupStatus(request: {
+  id: string;
+  publishingSetupStatus?: string | null;
+  publishingSetupErrorSummary?: string | null;
+  publishSetupChecks?: Array<{
+    checkKey: string;
+    status: string;
+    message: string;
+  }>;
+}) {
+  const status = request.publishingSetupStatus ?? "NOT_CHECKED";
+  const repairAction = repairPublishingSetupAction.bind(null, request.id);
+
+  return (
+    <section aria-label="Publishing setup status" className="setup-status">
+      <h3 className="setup-status__title">Publishing setup</h3>
+      <p>Setup: {formatStatus(status)}</p>
+      {request.publishingSetupErrorSummary ? (
+        <p className="setup-status__summary">
+          {request.publishingSetupErrorSummary}
+        </p>
+      ) : null}
+      {request.publishSetupChecks?.length ? (
+        <ul className="setup-status__checks">
+          {request.publishSetupChecks.map((check) => (
+            <li key={check.checkKey}>
+              {formatStatus(check.checkKey)}: {formatStatus(check.status)} -{" "}
+              {check.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {needsPublishingSetupRepair(status) ? (
+        <form action={repairAction}>
+          <PendingSubmitButton
+            idleLabel="Repair Publishing Setup"
+            pendingLabel="Repairing Publishing Setup..."
+            statusText="Refreshing Azure, Entra, and GitHub publishing setup."
+            variant="primary-solid"
+            size="sm"
+          />
+        </form>
+      ) : null}
+    </section>
   );
 }
 
@@ -443,6 +514,10 @@ export default async function MyAppsPage() {
         take: 1,
       },
       repositoryImport: true,
+      publishSetupChecks: {
+        orderBy: { checkedAt: "desc" },
+        take: 7,
+      },
     },
   });
   const currentUser = await prisma.user.findUnique({
@@ -508,6 +583,7 @@ export default async function MyAppsPage() {
             const repoBadge = statusBadge(request.repositoryStatus);
             const pubBadge = statusBadge(request.publishStatus);
             const accessBadge = statusBadge(request.repositoryAccessStatus);
+            const setupBadge = statusBadge(request.publishingSetupStatus);
 
             return (
               <li key={request.id} className="app-card">
@@ -540,6 +616,12 @@ export default async function MyAppsPage() {
                       title="Repo Access"
                     >
                       Repo access: {accessBadge.label}
+                    </span>
+                    <span
+                      className={`badge badge--${setupBadge.variant}`}
+                      title="Publishing Setup"
+                    >
+                      Setup: {setupBadge.label}
                     </span>
                   </div>
 
@@ -653,6 +735,14 @@ export default async function MyAppsPage() {
                     repositoryImport: request.repositoryImport,
                   })}
 
+                  {renderPublishingSetupStatus({
+                    id: request.id,
+                    publishingSetupStatus: request.publishingSetupStatus,
+                    publishingSetupErrorSummary:
+                      request.publishingSetupErrorSummary,
+                    publishSetupChecks: request.publishSetupChecks,
+                  })}
+
                   <div className="app-card__actions">
                     <Link
                       href={`/download/${request.id}`}
@@ -681,6 +771,7 @@ export default async function MyAppsPage() {
                       request.id,
                       request.repositoryStatus,
                       request.publishStatus,
+                      request.publishingSetupStatus,
                       request.sourceOfTruth,
                       request.repositoryImport?.preparationStatus,
                     )}

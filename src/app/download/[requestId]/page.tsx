@@ -6,6 +6,7 @@ import {
   publishToAzureAction,
   retryPublishAction,
 } from "@/features/publishing/actions";
+import { repairPublishingSetupAction } from "@/features/publishing/setup/actions";
 import {
   retryRepositoryBootstrapAction,
   saveGitHubUsernameAndGrantAccessAction,
@@ -56,6 +57,57 @@ function isImportedRepositoryPrepared(
 ) {
   return (
     sourceOfTruth !== "IMPORTED_REPOSITORY" || preparationStatus === "COMMITTED"
+  );
+}
+
+function needsPublishingSetupRepair(status: string | null | undefined) {
+  return status === "NEEDS_REPAIR" || status === "BLOCKED";
+}
+
+function renderPublishingSetupStatus(request: {
+  id: string;
+  publishingSetupStatus?: string | null;
+  publishingSetupErrorSummary?: string | null;
+  publishSetupChecks?: Array<{
+    checkKey: string;
+    status: string;
+    message: string;
+  }>;
+}) {
+  const status = request.publishingSetupStatus ?? "NOT_CHECKED";
+  const repairAction = repairPublishingSetupAction.bind(null, request.id);
+
+  return (
+    <section aria-label="Publishing setup status" className="setup-status">
+      <h3 className="setup-status__title">Publishing setup</h3>
+      <p>Setup: {formatStatus(status)}</p>
+      {request.publishingSetupErrorSummary ? (
+        <p className="setup-status__summary">
+          {request.publishingSetupErrorSummary}
+        </p>
+      ) : null}
+      {request.publishSetupChecks?.length ? (
+        <ul className="setup-status__checks">
+          {request.publishSetupChecks.map((check) => (
+            <li key={check.checkKey}>
+              {formatStatus(check.checkKey)}: {formatStatus(check.status)} -{" "}
+              {check.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {needsPublishingSetupRepair(status) ? (
+        <form action={repairAction}>
+          <PendingSubmitButton
+            idleLabel="Repair Publishing Setup"
+            pendingLabel="Repairing Publishing Setup..."
+            statusText="Refreshing Azure, Entra, and GitHub publishing setup."
+            variant="primary-solid"
+            size="sm"
+          />
+        </form>
+      ) : null}
+    </section>
   );
 }
 
@@ -255,12 +307,14 @@ function renderPublishAction({
   repositoryStatus,
   sourceOfTruth,
   preparationStatus,
+  publishingSetupStatus,
 }: {
   requestId: string;
   publishStatus: string;
   repositoryStatus: string;
   sourceOfTruth: string;
   preparationStatus: string | null | undefined;
+  publishingSetupStatus: string | null | undefined;
 }) {
   if (repositoryStatus === "FAILED") {
     const retryAction = retryRepositoryBootstrapAction.bind(null, requestId);
@@ -280,6 +334,14 @@ function renderPublishAction({
 
   if (!isImportedRepositoryPrepared(sourceOfTruth, preparationStatus)) {
     return <p>{PREPARATION_REQUIRED_MESSAGE}</p>;
+  }
+
+  if (needsPublishingSetupRepair(publishingSetupStatus)) {
+    return (
+      <p style={{ color: "var(--text-secondary)", fontSize: "0.9375rem" }}>
+        Repair publishing setup before publishing.
+      </p>
+    );
   }
 
   if (publishStatus === "FAILED") {
@@ -338,6 +400,10 @@ export default async function DownloadPage({
         take: 1,
       },
       repositoryImport: true,
+      publishSetupChecks: {
+        orderBy: { checkedAt: "desc" },
+        take: 7,
+      },
     },
   });
 
@@ -655,12 +721,20 @@ export default async function DownloadPage({
             </div>
           ) : null}
 
+          {renderPublishingSetupStatus({
+            id: appRequest.id,
+            publishingSetupStatus: appRequest.publishingSetupStatus,
+            publishingSetupErrorSummary: appRequest.publishingSetupErrorSummary,
+            publishSetupChecks: appRequest.publishSetupChecks,
+          })}
+
           {renderPublishAction({
             requestId,
             publishStatus: appRequest.publishStatus,
             repositoryStatus: appRequest.repositoryStatus,
             sourceOfTruth: appRequest.sourceOfTruth,
             preparationStatus: appRequest.repositoryImport?.preparationStatus,
+            publishingSetupStatus: appRequest.publishingSetupStatus,
           })}
         </div>
 

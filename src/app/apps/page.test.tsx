@@ -23,6 +23,10 @@ vi.mock("@/features/publishing/actions", () => ({
   retryPublishAction: vi.fn(),
 }));
 
+vi.mock("@/features/publishing/setup/actions", () => ({
+  repairPublishingSetupAction: vi.fn(),
+}));
+
 vi.mock("@/features/app-deletion/actions", () => ({
   deleteAppAction: vi.fn(),
 }));
@@ -102,6 +106,8 @@ describe("MyAppsPage", () => {
         repositoryAccessStatus: "GRANTED",
         repositoryAccessNote: "GitHub access is ready for @portalstaff.",
         publishStatus: "FAILED",
+        publishingSetupStatus: "NOT_CHECKED",
+        publishingSetupErrorSummary: null,
         repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
         repositoryOwner: "cedarville-it",
         repositoryName: "campus-dashboard",
@@ -110,6 +116,7 @@ describe("MyAppsPage", () => {
         azureWebAppName: null,
         azureDatabaseName: null,
         publishAttempts: [],
+        publishSetupChecks: [],
       },
     ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
@@ -135,6 +142,10 @@ describe("MyAppsPage", () => {
       expect.objectContaining({
         include: expect.objectContaining({
           repositoryImport: true,
+          publishSetupChecks: {
+            orderBy: { checkedAt: "desc" },
+            take: 7,
+          },
         }),
       }),
     );
@@ -557,6 +568,8 @@ describe("MyAppsPage", () => {
         repositoryAccessStatus: "GRANTED",
         repositoryAccessNote: null,
         publishStatus: "FAILED",
+        publishingSetupStatus: "READY",
+        publishingSetupErrorSummary: null,
         repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
         repositoryOwner: "cedarville-it",
         repositoryName: "campus-dashboard",
@@ -571,6 +584,7 @@ describe("MyAppsPage", () => {
           preparationStatus: "COMMITTED",
         },
         publishAttempts: [],
+        publishSetupChecks: [],
       },
     ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
@@ -586,6 +600,74 @@ describe("MyAppsPage", () => {
       screen.queryByText(
         /azure publishing unavailable until repository preparation is committed/i,
       ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows repair instead of retry publish when publishing setup needs repair", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findMany).mockResolvedValue([
+      {
+        id: "req_setup_repair",
+        appName: "Campus Dashboard",
+        generationStatus: "SUCCEEDED",
+        sourceOfTruth: "PORTAL_MANAGED_REPO",
+        repositoryStatus: "READY",
+        repositoryAccessStatus: "GRANTED",
+        repositoryAccessNote: null,
+        publishStatus: "FAILED",
+        publishErrorSummary:
+          "Publishing setup failed: Publishing credentials are out of date and need to be refreshed.",
+        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupErrorSummary:
+          "Publishing credentials are out of date and need to be refreshed.",
+        repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+        repositoryOwner: "cedarville-it",
+        repositoryName: "campus-dashboard",
+        publishUrl: null,
+        primaryPublishUrl: null,
+        azureWebAppName: null,
+        azureDatabaseName: null,
+        repositoryImport: null,
+        publishAttempts: [],
+        publishSetupChecks: [
+          {
+            checkKey: "github_actions_secrets",
+            status: "FAIL",
+            message: "Required GitHub Actions secrets are missing.",
+          },
+        ],
+      },
+    ] as Awaited<ReturnType<typeof prisma.appRequest.findMany>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(await MyAppsPage());
+
+    const setupStatus = screen.getByRole("region", {
+      name: /publishing setup status/i,
+    });
+    expect(
+      within(setupStatus).getByText(/setup: needs repair/i),
+    ).toBeInTheDocument();
+    expect(
+      within(setupStatus).getByText(/publishing credentials are out of date/i),
+    ).toBeInTheDocument();
+    expect(
+      within(setupStatus).getByText(
+        /github actions secrets: fail - required github actions secrets are missing/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(setupStatus).getByRole("button", {
+        name: /repair publishing setup/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/repair publishing setup before publishing/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /retry publish/i }),
     ).not.toBeInTheDocument();
   });
 
