@@ -154,6 +154,7 @@ describe("publishing actions", () => {
         id: "request-123",
         userId: "user-123",
         repositoryStatus: "READY",
+        publishingSetupStatus: { in: ["NOT_CHECKED", "READY"] },
         publishStatus: { in: ["NOT_STARTED", "SUCCEEDED"] },
       },
       data: {
@@ -202,6 +203,54 @@ describe("publishing actions", () => {
     await publishToAzureAction("request-123");
 
     expect(prisma.publishAttempt.create).toHaveBeenCalled();
+    expect(prisma.appRequest.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "request-123",
+        userId: "user-123",
+        repositoryStatus: "READY",
+        publishingSetupStatus: { in: ["NOT_CHECKED", "READY"] },
+        publishStatus: { in: ["NOT_STARTED", "SUCCEEDED"] },
+      },
+      data: {
+        publishStatus: "QUEUED",
+        publishErrorSummary: null,
+      },
+    });
+    expect(runPublishAttempt).toHaveBeenCalledWith("attempt-123");
+  });
+
+  it("queues imported app publish requests only when setup is ready in the transaction", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "request-123",
+      userId: "user-123",
+      repositoryStatus: "READY",
+      publishStatus: "NOT_STARTED",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      publishingSetupStatus: "READY",
+      repositoryImport: {
+        preparationStatus: "COMMITTED",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.publishAttempt.create).mockResolvedValue({
+      id: "attempt-123",
+    } as Awaited<ReturnType<typeof prisma.publishAttempt.create>>);
+
+    await publishToAzureAction("request-123");
+
+    expect(prisma.appRequest.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "request-123",
+        userId: "user-123",
+        repositoryStatus: "READY",
+        publishingSetupStatus: "READY",
+        publishStatus: { in: ["NOT_STARTED", "SUCCEEDED"] },
+      },
+      data: {
+        publishStatus: "QUEUED",
+        publishErrorSummary: null,
+      },
+    });
     expect(runPublishAttempt).toHaveBeenCalledWith("attempt-123");
   });
 
@@ -412,6 +461,7 @@ describe("publishing actions", () => {
         id: "request-123",
         userId: "user-123",
         repositoryStatus: "READY",
+        publishingSetupStatus: { in: ["NOT_CHECKED", "READY"] },
         publishStatus: { in: ["NOT_STARTED", "SUCCEEDED"] },
       },
       data: {
@@ -460,6 +510,7 @@ describe("publishing actions", () => {
         id: "request-123",
         userId: "user-123",
         repositoryStatus: "READY",
+        publishingSetupStatus: { in: ["NOT_CHECKED", "READY"] },
         publishStatus: { in: ["FAILED"] },
       },
       data: {

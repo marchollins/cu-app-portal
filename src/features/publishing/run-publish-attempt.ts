@@ -7,7 +7,10 @@ import { createAzureArmClient } from "./azure/arm-client";
 import { loadAzurePublishConfig } from "./azure/config";
 import { createMicrosoftGraphClient } from "./azure/graph-client";
 import { createAzurePublishRuntime } from "./azure/runtime";
-import { classifyPublishingSetupError } from "./setup/status";
+import {
+  classifyPublishingSetupError,
+  type PublishingSetupCheckKey,
+} from "./setup/status";
 
 export type ProvisionedPublishTarget = {
   azureResourceGroup: string;
@@ -26,6 +29,7 @@ export type DeploymentRun = {
 };
 
 export type DeployRepositoryOptions = {
+  onSetupStep?: (step: PublishingSetupCheckKey) => void;
   onWorkflowDispatched?: () => void;
 };
 
@@ -134,6 +138,7 @@ export async function runPublishAttempt(
   });
 
   let deploymentDispatchMayHaveStarted = false;
+  let currentSetupStep: PublishingSetupCheckKey = "azure_resource_access";
 
   try {
     const effectiveRuntime = runtime ?? createDefaultRuntime();
@@ -182,6 +187,9 @@ export async function runPublishAttempt(
     const deployment = await effectiveRuntime.deployRepository(
       attempt.appRequestId,
       {
+        onSetupStep: (step) => {
+          currentSetupStep = step;
+        },
         onWorkflowDispatched: () => {
           deploymentDispatchMayHaveStarted = true;
         },
@@ -267,7 +275,7 @@ export async function runPublishAttempt(
     const setupFailure = deploymentDispatchMayHaveStarted
       ? null
       : classifyPublishingSetupError({
-          step: "azure_resource_access",
+          step: currentSetupStep,
           error,
         });
     const appRequestFailureData = setupFailure

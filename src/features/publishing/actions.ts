@@ -14,12 +14,17 @@ import {
 } from "./workflow-triggers";
 
 type QueueablePublishStatus = "NOT_STARTED" | "SUCCEEDED" | "FAILED";
+type QueueablePublishingSetupStatus = "NOT_CHECKED" | "READY";
 
 const BLOCKING_SETUP_STATUSES = new Set([
   "NEEDS_REPAIR",
   "REPAIRING",
   "BLOCKED",
 ]);
+const GENERATED_APP_QUEUEABLE_SETUP_STATUSES: QueueablePublishingSetupStatus[] = [
+  "NOT_CHECKED",
+  "READY",
+];
 
 async function loadOwnedAppRequest(requestId: string) {
   const userId = await resolveCurrentUserId();
@@ -100,6 +105,16 @@ function createGitHubClientForOwner(owner: string) {
   });
 }
 
+function publishingSetupStatusPredicate(appRequest: {
+  sourceOfTruth?: string | null;
+}) {
+  if (appRequest.sourceOfTruth === "IMPORTED_REPOSITORY") {
+    return "READY";
+  }
+
+  return { in: GENERATED_APP_QUEUEABLE_SETUP_STATUSES };
+}
+
 async function queuePublishAttempt(
   requestId: string,
   allowedStatuses: QueueablePublishStatus[],
@@ -138,6 +153,7 @@ async function queuePublishAttempt(
         id: requestId,
         userId: appRequest.userId,
         repositoryStatus: "READY",
+        publishingSetupStatus: publishingSetupStatusPredicate(appRequest),
         publishStatus: { in: allowedStatuses },
       },
       data: {

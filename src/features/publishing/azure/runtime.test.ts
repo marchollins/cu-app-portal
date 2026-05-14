@@ -268,8 +268,34 @@ describe("createAzurePublishRuntime", () => {
     );
   });
 
+  it("reports setup-sensitive deploy steps before dispatch", async () => {
+    const setupSteps: string[] = [];
+    const onSetupStep = vi.fn((step: string) => setupSteps.push(step));
+    const { deps, graph, github } = createDeps();
+    const runtime = createAzurePublishRuntime(deps);
+
+    await runtime.deployRepository("clx9abc123zzzzzzzzzz", {
+      onSetupStep,
+    });
+
+    expect(setupSteps).toEqual([
+      "github_federated_credential",
+      "github_actions_secrets",
+    ]);
+    expect(onSetupStep.mock.invocationCallOrder[0]).toBeLessThan(
+      graph.ensureFederatedCredential.mock.invocationCallOrder[0],
+    );
+    expect(onSetupStep.mock.invocationCallOrder[1]).toBeLessThan(
+      github.setActionsSecret.mock.invocationCallOrder[0],
+    );
+    expect(onSetupStep.mock.invocationCallOrder[1]).toBeLessThan(
+      github.dispatchWorkflow.mock.invocationCallOrder[0],
+    );
+  });
+
   it("does not invoke the workflow dispatched hook when pre-dispatch setup fails", async () => {
     const onWorkflowDispatched = vi.fn();
+    const onSetupStep = vi.fn();
     const { deps, graph, github } = createDeps();
     graph.ensureFederatedCredential.mockRejectedValue(
       new Error("federated credential denied"),
@@ -279,9 +305,11 @@ describe("createAzurePublishRuntime", () => {
     await expect(
       runtime.deployRepository("clx9abc123zzzzzzzzzz", {
         onWorkflowDispatched,
+        onSetupStep,
       }),
     ).rejects.toThrow("federated credential denied");
 
+    expect(onSetupStep).toHaveBeenCalledWith("github_federated_credential");
     expect(onWorkflowDispatched).not.toHaveBeenCalled();
     expect(github.dispatchWorkflow).not.toHaveBeenCalled();
   });

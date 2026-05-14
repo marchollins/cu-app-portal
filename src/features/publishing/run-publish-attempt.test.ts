@@ -339,6 +339,54 @@ describe("runPublishAttempt", () => {
     });
   });
 
+  it("uses deploy setup step context when classifying pre-dispatch Graph failures", async () => {
+    vi.mocked(prisma.publishAttempt.findUnique).mockResolvedValue({
+      id: "attempt-655",
+      appRequestId: "request-655",
+      appRequest: {
+        id: "request-655",
+      },
+    } as Awaited<ReturnType<typeof prisma.publishAttempt.findUnique>>);
+    const graph403 = new Error(
+      'Microsoft Graph request failed: 403 {"error":{"code":"Authorization_RequestDenied","message":"Insufficient privileges to complete the operation.","innerError":{"request-id":"graph-request-456"}}}',
+    );
+
+    await expect(
+      runPublishAttempt("attempt-655", {
+        provisionInfrastructure: vi.fn().mockResolvedValue({
+          azureResourceGroup: "rg-cu-apps-published",
+          azureAppServicePlan: "asp-cu-apps-published",
+          azureWebAppName: "app-campus-dashboard-clx9abc1",
+          azurePostgresServer: "psql-cu-apps-published",
+          azureDatabaseName: "db_campus_dashboard_clx9abc1",
+          azureDefaultHostName:
+            "app-campus-dashboard-clx9abc1.azurewebsites.net",
+          primaryPublishUrl:
+            "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+        }),
+        deployRepository: vi
+          .fn()
+          .mockImplementation(async (_appRequestId, options) => {
+            options?.onSetupStep?.("github_federated_credential");
+            throw graph403;
+          }),
+        verifyDeployment: vi.fn(),
+      }),
+    ).rejects.toThrow("Microsoft Graph request failed: 403");
+
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-655" },
+      data: {
+        publishStatus: "FAILED",
+        publishErrorSummary:
+          "Publishing setup failed: Publishing credentials are out of date and need to be refreshed.",
+        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupErrorSummary:
+          "Publishing credentials are out of date and need to be refreshed.",
+      },
+    });
+  });
+
   it("does not classify failures after deployment dispatch", async () => {
     vi.mocked(prisma.publishAttempt.findUnique).mockResolvedValue({
       id: "attempt-789",

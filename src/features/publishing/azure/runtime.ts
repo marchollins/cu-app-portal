@@ -368,6 +368,7 @@ export function createAzurePublishRuntime(deps: RuntimeDeps): PublishRuntime {
       const branch = appRequest.repositoryDefaultBranch;
       const repository = `${owner}/${name}`;
 
+      options?.onSetupStep?.("github_federated_credential");
       await deps.graph.ensureFederatedCredential({
         applicationAppId: deps.config.azureClientId,
         name: names.federatedCredentialName,
@@ -375,6 +376,7 @@ export function createAzurePublishRuntime(deps: RuntimeDeps): PublishRuntime {
         branch,
       });
 
+      options?.onSetupStep?.("github_actions_secrets");
       await deps.github.setActionsSecret({
         owner,
         name,
