@@ -18,6 +18,8 @@ The current `web-app` template now includes an Azure-first publishing bundle for
 
 Portal-managed Azure publishing for generated apps uses one shared resource group, one shared App Service Plan, and one shared PostgreSQL flexible server. Each published app gets its own Azure Web App and its own PostgreSQL database on that shared server.
 
+For generated and imported apps, the portal tracks whether publishing setup is ready. If Azure, Entra, or GitHub credentials drift or rotate, the app can offer Repair Publishing Setup to refresh portal-managed setup instead of blindly retrying with stale configuration.
+
 The `My Apps` page also supports scoped deletion. A user can delete the portal record and ZIP artifact, the managed GitHub repository, and the app-specific Azure deployment independently. Azure deletion removes the app Web App and that app's PostgreSQL database only; it does not delete the shared PostgreSQL flexible server.
 
 ## Local Setup
