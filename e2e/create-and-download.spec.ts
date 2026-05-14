@@ -14,7 +14,7 @@ test("authenticated user can create an app package", async ({ page }) => {
   await expect(
     page.getByRole("combobox", { name: /hosting target/i }),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: /generate app package/i }).click();
+  await page.getByRole("button", { name: /^create app$/i }).click();
 
   await expect(
     page.getByRole("heading", { name: /your app is ready/i }),
