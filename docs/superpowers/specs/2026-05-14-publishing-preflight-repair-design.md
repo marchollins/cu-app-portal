@@ -15,10 +15,12 @@ Microsoft Graph request failed: 403 {"error":{"code":"Authorization_RequestDenie
 ```
 
 The current retry button queues another publish attempt even though the next
-attempt cannot succeed until the portal identity has the required Graph
-permission and setup is rerun. The new model separates publishing setup from
-deployment so the portal can show a specific repair path instead of a blind
-retry loop.
+attempt cannot succeed until publishing setup is repaired. In one observed case,
+Graph returned `Authorization_RequestDenied` because the app was using an
+expired secret credential, not because the operator needed to grant new Graph
+permissions. The new model separates publishing setup from deployment so the
+portal can refresh stale credentials, detect true permission blockers, and show
+a specific repair path instead of a blind retry loop.
 
 ## Goals
 
@@ -30,7 +32,7 @@ retry loop.
 - Provide an explicit `Repair Publishing Setup` action that fixes missing or
   stale Azure, Graph, and GitHub setup without dispatching a deployment.
 - Keep publish retry focused on actual deployment retries after setup is ready.
-- Surface Microsoft Graph permission failures with operator-actionable text.
+- Surface Microsoft Graph and credential failures with operator-actionable text.
 
 ## Non-Goals
 
@@ -101,10 +103,20 @@ When setup is not ready, the UI should show:
 
 - a short summary of the failed or unknown checks
 - a `Repair Publishing Setup` action when repair is possible
-- operator guidance when repair cannot proceed without permissions
+- operator guidance when repair cannot proceed without updated configured
+  credentials or permissions
 - no `Publish to Azure` or `Retry Publish` action until setup is ready
 
-For the Graph 403 case, the message should be plain and actionable:
+For a repairable stale credential case, the message should be plain and
+actionable:
+
+```txt
+Publishing credentials appear to be stale. Run Repair Publishing Setup to remove
+and replace portal-managed GitHub Actions secrets and GitHub OIDC credentials.
+```
+
+For a true Graph permission blocker, the message should also be plain and
+actionable:
 
 ```txt
 Microsoft Graph permission is missing for Entra publishing setup. Ask an
@@ -210,7 +222,10 @@ Repair should be idempotent and may:
 - reapply App Service app settings
 - ensure the Entra redirect URI for the app's primary publish URL
 - ensure the GitHub OIDC federated credential for the managed repo branch
-- set required GitHub Actions secrets
+- remove and recreate the portal-managed GitHub OIDC federated credential when
+  it may contain stale repository, branch, or app identity data
+- remove and reset required portal-managed GitHub Actions secrets so stale values
+  are replaced with the latest configured values
 - verify the deploy workflow file exists
 - verify workflow dispatch readiness
 - rerun preflight after repair and record fresh check results
@@ -219,13 +234,26 @@ Repair must not:
 
 - delete Azure resources
 - delete GitHub repositories or branches
+- delete unrelated GitHub Actions secrets or manually created federated
+  credentials
 - overwrite imported app source files
 - open or merge repository preparation PRs
 - dispatch `deploy-azure-app-service.yml`
 
-If repair hits `Authorization_RequestDenied` from Microsoft Graph, it should
-classify the app as `BLOCKED` and preserve the specific Graph request summary in
-safe operator-facing form.
+If repair hits `Authorization_RequestDenied` from Microsoft Graph, it should not
+automatically assume a permanent permission blocker. It should classify the
+failure using the setup step and available context:
+
+- stale or expired configured values: `NEEDS_REPAIR`, with guidance to update
+  portal configuration and rerun repair
+- inability to update the shared app registration or publisher federated
+  credentials after current values are loaded: `BLOCKED`, with operator
+  permission guidance
+- ambiguous Graph failure: `NEEDS_REPAIR` when retrying setup is safe,
+  otherwise `BLOCKED`
+
+All summaries should preserve safe Graph request evidence for operators without
+recording secrets.
 
 ## Publish Integration
 
@@ -259,16 +287,38 @@ workflow, or verification failure.
 
 ## Error Handling
 
-Graph permission errors should be detected by status and payload, including:
+Graph and credential setup errors should be detected by status, payload, and
+failing setup step. Graph `403` is not enough by itself to prove a permanent
+permissions blocker.
+
+Signals include:
 
 - HTTP `403`
 - Graph error code `Authorization_RequestDenied`
 - message text such as `Insufficient privileges to complete the operation.`
+- Azure identity token acquisition failures
+- known expired or rotated portal credential values
+- failures while creating or replacing GitHub OIDC federated credentials
+- failures while setting required GitHub Actions secrets
 
 The portal should avoid exposing raw JSON as the primary user message. Raw
 request IDs may be retained in audit logs or safe metadata for operator support.
 
-Recommended summary:
+Recommended stale credential summary:
+
+```txt
+Publishing credentials are out of date and need to be refreshed.
+```
+
+Recommended stale credential operator detail:
+
+```txt
+Update the portal's configured Azure and Entra credential values if needed, then
+run Repair Publishing Setup. Repair removes and recreates portal-managed GitHub
+Actions secrets and GitHub OIDC credentials with the latest values.
+```
+
+Recommended true permission blocker summary:
 
 ```txt
 Microsoft Graph permission is missing for Entra publishing setup.
@@ -316,10 +366,16 @@ credential-bearing URLs.
 
 Unit tests:
 
-- Graph `403 Authorization_RequestDenied` is classified as setup blocked.
-- Graph setup errors produce the actionable summary and operator detail.
+- Graph `403 Authorization_RequestDenied` is classified by step and context, not
+  always treated as a permanent blocker.
+- expired or stale configured credentials produce a repairable setup status.
+- true missing Graph permissions produce a blocked setup status.
+- Graph and credential setup errors produce the actionable summary and operator
+  detail.
 - preflight maps pass, fail, blocked, and unknown checks to the correct setup
   status.
+- repair removes and resets portal-managed GitHub Actions secrets and GitHub
+  OIDC credentials.
 - repair invokes setup methods but does not dispatch a workflow.
 - repair reruns preflight and records fresh check evidence.
 - publish gating rejects imported apps whose setup is not ready.
@@ -353,7 +409,7 @@ Build this in a staged way:
 
 1. Add setup status schema and check evidence records.
 2. Add setup error classification, especially Microsoft Graph permission
-   failures.
+   failures and stale credential failures.
 3. Extract setup work from the Azure publish runtime into reusable setup/repair
    functions.
 4. Add read-only preflight checks where provider APIs support them.
@@ -372,5 +428,8 @@ publishes while leaving room to deepen individual checks over time.
 - Apply repair to both imported apps and generated apps.
 - Require imported apps to pass publishing setup readiness before publishing.
 - Do not dispatch deployments from repair.
-- Treat Microsoft Graph `403 Authorization_RequestDenied` as a setup blocker,
-  not an ordinary deployment retry failure.
+- Treat Microsoft Graph `403 Authorization_RequestDenied` as a setup failure, but
+  classify it as repairable credential drift or a true blocker based on the
+  failing step and available context.
+- Repair should remove and reset portal-managed GitHub Actions secrets and
+  GitHub OIDC credentials with the latest configured values.
