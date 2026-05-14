@@ -71,4 +71,22 @@ describe("publishing setup actions", () => {
     expect(repairPublishingSetup).not.toHaveBeenCalled();
     expect(revalidatePath).not.toHaveBeenCalled();
   });
+
+  it("revalidates app views when repair fails for an owned app request", async () => {
+    const repairError = new Error("repair failed");
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "request-123",
+      userId: "user-123",
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(repairPublishingSetup).mockRejectedValue(repairError);
+
+    await expect(repairPublishingSetupAction("request-123")).rejects.toThrow(
+      repairError,
+    );
+
+    expect(repairPublishingSetup).toHaveBeenCalledWith("request-123");
+    expect(revalidatePath).toHaveBeenCalledWith("/apps");
+    expect(revalidatePath).toHaveBeenCalledWith("/download/request-123");
+  });
 });
