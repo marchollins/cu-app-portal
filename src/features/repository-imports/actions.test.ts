@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { resolveCurrentUserId } from "@/features/app-requests/current-user";
 import { loadGitHubAppConfig } from "@/features/repositories/config";
 import { createGitHubAppClient } from "@/features/repositories/github-app";
+import { preflightPublishingSetup } from "@/features/publishing/setup/service";
 import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import {
@@ -67,6 +68,10 @@ vi.mock("@/features/repositories/github-app", () => ({
   })),
 }));
 
+vi.mock("@/features/publishing/setup/service", () => ({
+  preflightPublishingSetup: vi.fn(),
+}));
+
 function createJsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -129,6 +134,8 @@ describe("repository import actions", () => {
     );
     vi.mocked(prepareImportedRepository).mockReset();
     vi.mocked(importRepositoryWithHistory).mockReset();
+    vi.mocked(preflightPublishingSetup).mockReset();
+    vi.mocked(preflightPublishingSetup).mockResolvedValue([]);
   });
 
   it("creates an imported app request for a shared-org repo", async () => {
@@ -771,6 +778,7 @@ describe("repository import actions", () => {
         preparationErrorSummary: null,
       }),
     });
+    expect(preflightPublishingSetup).toHaveBeenCalledWith("req_123");
   });
 
   it("retries a failed imported app preparation", async () => {
@@ -842,6 +850,56 @@ describe("repository import actions", () => {
         preparationErrorSummary: null,
       }),
     });
+    expect(preflightPublishingSetup).not.toHaveBeenCalled();
+  });
+
+  it("marks publishing setup as needing repair when committed preparation preflight fails", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_preflight_failed",
+      userId: "user-123",
+      appName: "Campus Dashboard",
+      repositoryOwner: "cedarville-it",
+      repositoryName: "campus-dashboard",
+      repositoryDefaultBranch: "main",
+      repositoryImport: {
+        id: "import_preflight_failed",
+        preparationStatus: "PENDING_USER_CHOICE",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prepareImportedRepository).mockResolvedValue({
+      status: "COMMITTED",
+      commitSha: "commit-sha",
+      pullRequestUrl: null,
+    });
+    vi.mocked(preflightPublishingSetup).mockRejectedValue(
+      new Error("Azure app settings are missing."),
+    );
+
+    const formData = new FormData();
+    formData.set("preparationMode", "DIRECT_COMMIT");
+
+    await expect(
+      prepareExistingAppAction("req_preflight_failed", formData, {
+        github: {
+          getBranchHead: vi.fn(),
+          readRepositoryTextFiles: vi.fn(),
+          commitFiles: vi.fn(),
+          createPullRequestWithFiles: vi.fn(),
+        },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(preflightPublishingSetup).toHaveBeenCalledWith("req_preflight_failed");
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "req_preflight_failed" },
+      data: {
+        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupErrorSummary: "Azure app settings are missing.",
+      },
+    });
+    expect(revalidatePath).toHaveBeenCalledWith("/apps");
+    expect(revalidatePath).toHaveBeenCalledWith("/download/req_preflight_failed");
   });
 
   it("records publishing-file conflicts as blocked feedback without throwing", async () => {
@@ -1161,6 +1219,7 @@ describe("repository import actions", () => {
         targetRepository: "cedarville-it/campus-dashboard",
       },
     );
+    expect(preflightPublishingSetup).toHaveBeenCalledWith("req_verify");
   });
 
   it("marks conflict-blocked repositories committed when required publishing files reach the default branch", async () => {
