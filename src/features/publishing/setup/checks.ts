@@ -22,6 +22,7 @@ const SAFE_METADATA_KEYS = new Set([
   "secretname",
   "secretnames",
   "missingsettingnames",
+  "mismatchedsettingnames",
   "settingnames",
   "statuscode",
   "step",

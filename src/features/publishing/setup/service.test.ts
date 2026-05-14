@@ -210,6 +210,75 @@ describe("publishing setup service", () => {
     });
   });
 
+  it("marks setup needs repair when a public Azure app setting is stale", async () => {
+    const baseDeps = createDeps();
+    const deps = createDeps({
+      arm: {
+        ...baseDeps.arm,
+        getAppSettings: vi.fn().mockResolvedValue({
+          exists: true,
+          settings: {
+            DATABASE_URL: "postgresql://stale-secret",
+            AUTH_URL: "https://old-campus-dashboard.azurewebsites.net",
+            NEXTAUTH_URL: "https://app-campus-dashboard.azurewebsites.net",
+            AUTH_SECRET: "stale-secret",
+            AUTH_MICROSOFT_ENTRA_ID_ID: "entra-client-id",
+            AUTH_MICROSOFT_ENTRA_ID_SECRET: "stale-secret",
+            AUTH_MICROSOFT_ENTRA_ID_ISSUER:
+              "https://login.microsoftonline.com/tenant/v2.0",
+            NODE_ENV: "production",
+            SCM_DO_BUILD_DURING_DEPLOYMENT: "false",
+            ENABLE_ORYX_BUILD: "false",
+            WEBSITE_RUN_FROM_PACKAGE: "1",
+          },
+        }),
+      },
+    });
+
+    await preflightPublishingSetup("req_123", deps);
+
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "req_123" },
+      data: expect.objectContaining({
+        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupErrorSummary:
+          "Azure App Service settings need to be refreshed.",
+      }),
+    });
+    expect(prisma.publishSetupCheck.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          checkKey: "azure_app_settings",
+          status: "FAIL",
+          message: "Azure App Service settings need to be refreshed.",
+          metadata: {
+            webAppName: "app-campus-dashboard-req123",
+            mismatchedSettingNames: ["AUTH_URL"],
+            repairable: true,
+          },
+        }),
+      }),
+    );
+    expect(prisma.publishSetupCheck.upsert).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          metadata: expect.objectContaining({
+            actualValue: expect.any(String),
+            expectedValue: expect.any(String),
+          }),
+        }),
+      }),
+    );
+    const azureSettingsCall = vi
+      .mocked(prisma.publishSetupCheck.upsert)
+      .mock.calls.find(
+        ([input]) => input.create.checkKey === "azure_app_settings",
+      )?.[0];
+    expect(JSON.stringify(azureSettingsCall?.create.metadata)).not.toContain(
+      "stale-secret",
+    );
+  });
+
   it("marks workflow dispatch readiness pass only when static dispatch proof exists", async () => {
     await preflightPublishingSetup("req_123", createDeps());
 
@@ -301,16 +370,23 @@ describe("publishing setup service", () => {
     expect(prisma.appRequest.update).toHaveBeenCalledWith({
       where: { id: "req_123" },
       data: expect.objectContaining({
-        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupStatus: "BLOCKED",
         publishingSetupErrorSummary:
-          "Workflow dispatch readiness could not be verified.",
+          "Deployment workflow is missing a workflow_dispatch trigger.",
       }),
     });
     expect(prisma.publishSetupCheck.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({
           checkKey: "github_workflow_dispatch",
-          status: "UNKNOWN",
+          status: "FAIL",
+          message:
+            "Deployment workflow is missing a workflow_dispatch trigger.",
+          metadata: {
+            workflowPath: ".github/workflows/deploy-azure-app-service.yml",
+            branch: "main",
+            repairable: false,
+          },
         }),
       }),
     );

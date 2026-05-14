@@ -44,6 +44,11 @@ const REQUIRED_PORTAL_MANAGED_APP_SETTINGS = [
   "ENABLE_ORYX_BUILD",
   "WEBSITE_RUN_FROM_PACKAGE",
 ] as const;
+const SECRET_PORTAL_MANAGED_APP_SETTINGS: ReadonlySet<string> = new Set([
+  "DATABASE_URL",
+  "AUTH_SECRET",
+  "AUTH_MICROSOFT_ENTRA_ID_SECRET",
+] as const);
 
 type SetupDb = Pick<
   PrismaClient,
@@ -412,6 +417,43 @@ function requiredAppSettings() {
   return [...REQUIRED_PORTAL_MANAGED_APP_SETTINGS];
 }
 
+function expectedPublicAppSettings({
+  config,
+  publishUrl,
+}: {
+  config: AzurePublishConfig;
+  publishUrl: string;
+}) {
+  return {
+    AUTH_URL: publishUrl,
+    NEXTAUTH_URL: publishUrl,
+    AUTH_MICROSOFT_ENTRA_ID_ID: config.entraClientId,
+    AUTH_MICROSOFT_ENTRA_ID_ISSUER: config.entraIssuer,
+    NODE_ENV: "production",
+    SCM_DO_BUILD_DURING_DEPLOYMENT: "false",
+    ENABLE_ORYX_BUILD: "false",
+    WEBSITE_RUN_FROM_PACKAGE: "1",
+  };
+}
+
+function mismatchedPublicAppSettingNames({
+  settings,
+  expected,
+}: {
+  settings: Record<string, string>;
+  expected: Record<string, string>;
+}) {
+  return Object.entries(expected)
+    .filter(([settingName, expectedValue]) => {
+      if (SECRET_PORTAL_MANAGED_APP_SETTINGS.has(settingName)) {
+        return false;
+      }
+
+      return settings[settingName] !== expectedValue;
+    })
+    .map(([settingName]) => settingName);
+}
+
 function isAzureArmForbidden(error: unknown) {
   return (
     error instanceof Error && error.message.includes("Azure ARM request failed: 403")
@@ -421,9 +463,11 @@ function isAzureArmForbidden(error: unknown) {
 async function checkAzureAppSettings({
   deps,
   webAppName,
+  publishUrl,
 }: {
   deps: PublishingSetupServiceDeps;
   webAppName: string;
+  publishUrl: string;
 }) {
   try {
     const appSettings = await deps.arm.getAppSettings({
@@ -447,6 +491,22 @@ async function checkAzureAppSettings({
         "azure_app_settings",
         "Required Azure App Service settings are missing.",
         { webAppName, missingSettingNames, repairable: true },
+      );
+    }
+
+    const mismatchedSettingNames = mismatchedPublicAppSettingNames({
+      settings: appSettings.settings,
+      expected: expectedPublicAppSettings({
+        config: deps.config,
+        publishUrl,
+      }),
+    });
+
+    if (mismatchedSettingNames.length > 0) {
+      return fail(
+        "azure_app_settings",
+        "Azure App Service settings need to be refreshed.",
+        { webAppName, mismatchedSettingNames, repairable: true },
       );
     }
 
@@ -491,10 +551,10 @@ function checkWorkflowDispatch({
     );
   }
 
-  return unknown(
+  return fail(
     "github_workflow_dispatch",
-    "Workflow dispatch readiness could not be verified.",
-    { workflowPath: WORKFLOW_PATH, branch, repairable: true },
+    "Deployment workflow is missing a workflow_dispatch trigger.",
+    { workflowPath: WORKFLOW_PATH, branch, repairable: false },
   );
 }
 
@@ -686,7 +746,11 @@ async function runPreflightChecks(
     }),
   );
   checks.push(
-    await checkAzureAppSettings({ deps, webAppName: names.webAppName }),
+    await checkAzureAppSettings({
+      deps,
+      webAppName: names.webAppName,
+      publishUrl: publishUrlFor(appRequest),
+    }),
   );
   checks.push(
     checkWorkflowDispatch({ workflow: workflowFile.workflow, branch: repo.branch }),
