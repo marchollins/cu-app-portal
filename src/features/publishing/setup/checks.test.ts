@@ -330,4 +330,37 @@ describe("persistPublishingSetupChecks", () => {
       }),
     );
   });
+
+  it("uses an injected Prisma client and appends related transaction operations", async () => {
+    const injectedPrisma = {
+      $transaction: vi.fn((operations) => Promise.all(operations)),
+      publishSetupCheck: {
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+    };
+    const appRequestUpdate = Promise.resolve({ id: "request-123" });
+
+    await persistPublishingSetupChecks({
+      prisma: injectedPrisma,
+      appRequestId: "request-123",
+      checkedAt: new Date("2026-05-14T16:15:00.000Z"),
+      checks: [
+        {
+          checkKey: "azure_resource_access",
+          status: "PASS",
+          message: "Azure resources are readable.",
+          metadata: { resourceGroup: "rg-cu-apps-published" },
+        },
+      ],
+      additionalOperations: [appRequestUpdate],
+    });
+
+    expect(prisma.publishSetupCheck.upsert).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(injectedPrisma.publishSetupCheck.upsert).toHaveBeenCalledTimes(1);
+    expect(injectedPrisma.$transaction).toHaveBeenCalledWith([
+      expect.any(Promise),
+      appRequestUpdate,
+    ]);
+  });
 });

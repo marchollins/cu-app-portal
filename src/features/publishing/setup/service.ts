@@ -31,8 +31,24 @@ const REQUIRED_PORTAL_MANAGED_SECRETS = [
   "AZURE_SUBSCRIPTION_ID",
   "AZURE_WEBAPP_NAME",
 ] as const;
+const REQUIRED_PORTAL_MANAGED_APP_SETTINGS = [
+  "DATABASE_URL",
+  "AUTH_URL",
+  "NEXTAUTH_URL",
+  "AUTH_SECRET",
+  "AUTH_MICROSOFT_ENTRA_ID_ID",
+  "AUTH_MICROSOFT_ENTRA_ID_SECRET",
+  "AUTH_MICROSOFT_ENTRA_ID_ISSUER",
+  "NODE_ENV",
+  "SCM_DO_BUILD_DURING_DEPLOYMENT",
+  "ENABLE_ORYX_BUILD",
+  "WEBSITE_RUN_FROM_PACKAGE",
+] as const;
 
-type SetupDb = Pick<PrismaClient, "appRequest">;
+type SetupDb = Pick<
+  PrismaClient,
+  "$transaction" | "appRequest" | "publishSetupCheck"
+>;
 
 type SetupAppRequest = {
   id: string;
@@ -52,6 +68,10 @@ export type PublishingSetupServiceDeps = {
   prisma?: SetupDb;
   arm: {
     appServicePlanId(resourceGroup: string, name: string): string;
+    getAppSettings(input: {
+      resourceGroup: string;
+      name: string;
+    }): Promise<{ exists: boolean; settings: Record<string, string> }>;
     putPostgresDatabase(input: {
       resourceGroup: string;
       serverName: string;
@@ -277,6 +297,14 @@ function fail(
   return { checkKey, status: "FAIL", message, metadata };
 }
 
+function unknown(
+  checkKey: PublishingSetupCheckKey,
+  message: string,
+  metadata: Record<string, unknown> = {},
+): PublishingSetupCheckResult {
+  return { checkKey, status: "UNKNOWN", message, metadata };
+}
+
 async function recordChecks({
   appRequestId,
   checks,
@@ -289,19 +317,21 @@ async function recordChecks({
   const checkedAt = new Date();
   const summary = summarizePublishingSetupChecks(checks);
 
-  await persistPublishingSetupChecks({
-    appRequestId,
-    checks,
-    checkedAt,
-  });
-
-  await db.appRequest.update({
+  const updateStatusOperation = db.appRequest.update({
     where: { id: appRequestId },
     data: {
       publishingSetupStatus: summary.setupStatus,
       publishingSetupCheckedAt: checkedAt,
       publishingSetupErrorSummary: summary.errorSummary,
     },
+  });
+
+  await persistPublishingSetupChecks({
+    prisma: db,
+    appRequestId,
+    checks,
+    checkedAt,
+    additionalOperations: [updateStatusOperation],
   });
 
   return {
@@ -328,18 +358,21 @@ async function checkWorkflowFile({
     paths: [WORKFLOW_PATH],
   });
 
-  if (files[WORKFLOW_PATH]) {
-    return pass("github_workflow_file", "Deployment workflow exists.", {
-      workflowPath: WORKFLOW_PATH,
-      branch,
-    });
-  }
+  const workflow = files[WORKFLOW_PATH] ?? null;
 
-  return fail("github_workflow_file", "Deployment workflow is missing.", {
-    workflowPath: WORKFLOW_PATH,
-    branch,
-    repairable: false,
-  });
+  return {
+    workflow,
+    check: workflow
+      ? pass("github_workflow_file", "Deployment workflow exists.", {
+          workflowPath: WORKFLOW_PATH,
+          branch,
+        })
+      : fail("github_workflow_file", "Deployment workflow is missing.", {
+          workflowPath: WORKFLOW_PATH,
+          branch,
+          repairable: false,
+        }),
+  };
 }
 
 async function checkActionsSecrets({
@@ -375,6 +408,96 @@ async function checkActionsSecrets({
   );
 }
 
+function requiredAppSettings() {
+  return [...REQUIRED_PORTAL_MANAGED_APP_SETTINGS];
+}
+
+function isAzureArmForbidden(error: unknown) {
+  return (
+    error instanceof Error && error.message.includes("Azure ARM request failed: 403")
+  );
+}
+
+async function checkAzureAppSettings({
+  deps,
+  webAppName,
+}: {
+  deps: PublishingSetupServiceDeps;
+  webAppName: string;
+}) {
+  try {
+    const appSettings = await deps.arm.getAppSettings({
+      resourceGroup: deps.config.resourceGroup,
+      name: webAppName,
+    });
+
+    if (!appSettings.exists) {
+      return fail("azure_app_settings", "Azure App Service is missing.", {
+        webAppName,
+        repairable: true,
+      });
+    }
+
+    const missingSettingNames = requiredAppSettings().filter(
+      (settingName) => !(settingName in appSettings.settings),
+    );
+
+    if (missingSettingNames.length > 0) {
+      return fail(
+        "azure_app_settings",
+        "Required Azure App Service settings are missing.",
+        { webAppName, missingSettingNames, repairable: true },
+      );
+    }
+
+    return pass(
+      "azure_app_settings",
+      "Required Azure App Service settings are present.",
+      { webAppName, settingNames: requiredAppSettings() },
+    );
+  } catch (error) {
+    if (!isAzureArmForbidden(error)) {
+      return unknown(
+        "azure_app_settings",
+        "Azure App Service settings could not be read.",
+        { webAppName, repairable: true },
+      );
+    }
+
+    return fail(
+      "azure_app_settings",
+      "Azure App Service settings could not be read.",
+      {
+        webAppName,
+        repairable: false,
+        statusCode: 403,
+      },
+    );
+  }
+}
+
+function checkWorkflowDispatch({
+  workflow,
+  branch,
+}: {
+  workflow: string | null;
+  branch: string;
+}) {
+  if (workflow?.includes("workflow_dispatch:")) {
+    return pass(
+      "github_workflow_dispatch",
+      "Workflow dispatch can be attempted from the default branch.",
+      { workflowPath: WORKFLOW_PATH, branch },
+    );
+  }
+
+  return unknown(
+    "github_workflow_dispatch",
+    "Workflow dispatch readiness could not be verified.",
+    { workflowPath: WORKFLOW_PATH, branch, repairable: true },
+  );
+}
+
 async function runPreflightChecks(
   appRequest: SetupAppRequest,
   deps: PublishingSetupServiceDeps,
@@ -388,14 +511,14 @@ async function runPreflightChecks(
   });
   const checks: PublishingSetupCheckResult[] = [];
 
-  checks.push(
-    await checkWorkflowFile({
-      deps,
-      owner: repo.owner,
-      name: repo.name,
-      branch: repo.branch,
-    }),
-  );
+  const workflowFile = await checkWorkflowFile({
+    deps,
+    owner: repo.owner,
+    name: repo.name,
+    branch: repo.branch,
+  });
+
+  checks.push(workflowFile.check);
   checks.push(
     await checkActionsSecrets({
       deps,
@@ -448,18 +571,10 @@ async function runPreflightChecks(
     }),
   );
   checks.push(
-    warn(
-      "azure_app_settings",
-      "Azure App Service settings are refreshed during repair.",
-      { webAppName: names.webAppName, repairable: true },
-    ),
+    await checkAzureAppSettings({ deps, webAppName: names.webAppName }),
   );
   checks.push(
-    warn(
-      "github_workflow_dispatch",
-      "Workflow dispatch readiness is verified during publish.",
-      { workflowPath: WORKFLOW_PATH, repairable: true },
-    ),
+    checkWorkflowDispatch({ workflow: workflowFile.workflow, branch: repo.branch }),
   );
 
   return checks;
@@ -527,16 +642,22 @@ export async function repairPublishingSetup(
     });
     const azureDefaultHostName =
       webApp.properties?.defaultHostName ?? names.azureDefaultHostName;
-    const primaryPublishUrl = `https://${azureDefaultHostName}`;
+    const azurePublishUrl = `https://${azureDefaultHostName}`;
+    const effectivePublishUrl = appRequest.primaryPublishUrl ?? azurePublishUrl;
 
     repairStep = "azure_app_settings";
+    const existingAppSettings = await deps.arm.getAppSettings({
+      resourceGroup: deps.config.resourceGroup,
+      name: names.webAppName,
+    });
     await deps.arm.putAppSettings({
       resourceGroup: deps.config.resourceGroup,
       name: names.webAppName,
       settings: {
+        ...(existingAppSettings.exists ? existingAppSettings.settings : {}),
         DATABASE_URL: buildDatabaseUrl(deps.config, names.databaseName),
-        AUTH_URL: primaryPublishUrl,
-        NEXTAUTH_URL: primaryPublishUrl,
+        AUTH_URL: effectivePublishUrl,
+        NEXTAUTH_URL: effectivePublishUrl,
         AUTH_SECRET: deps.config.authSecret,
         AUTH_MICROSOFT_ENTRA_ID_ID: deps.config.entraClientId,
         AUTH_MICROSOFT_ENTRA_ID_SECRET: deps.config.entraClientSecret,
@@ -551,7 +672,7 @@ export async function repairPublishingSetup(
     repairStep = "entra_redirect_uri";
     await deps.graph.ensureRedirectUri({
       applicationObjectId: deps.config.entraAppObjectId,
-      redirectUri: `${primaryPublishUrl}${ENTRA_CALLBACK_PATH}`,
+      redirectUri: `${effectivePublishUrl}${ENTRA_CALLBACK_PATH}`,
     });
     repairStep = "github_federated_credential";
     await deps.graph.replaceFederatedCredential({
@@ -587,7 +708,7 @@ export async function repairPublishingSetup(
         azurePostgresServer: deps.config.postgresServer,
         azureDatabaseName: names.databaseName,
         azureDefaultHostName,
-        primaryPublishUrl,
+        primaryPublishUrl: effectivePublishUrl,
         publishingSetupRepairedAt: new Date(),
       },
     });

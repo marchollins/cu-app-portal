@@ -34,6 +34,22 @@ async function requireAzureStatus(response: Response, expectedStatuses: number[]
   throw new Error(`Azure ARM request failed: ${response.status} ${text}`);
 }
 
+function toStringSettings(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const settings: Record<string, string> = {};
+
+  for (const [key, settingValue] of Object.entries(value)) {
+    if (typeof settingValue === "string") {
+      settings[key] = settingValue;
+    }
+  }
+
+  return settings;
+}
+
 export function createAzureArmClient({
   subscriptionId,
   tokenProvider,
@@ -109,6 +125,32 @@ export function createAzureArmClient({
           },
         ),
       );
+    },
+    async getAppSettings(input: {
+      resourceGroup: string;
+      name: string;
+    }) {
+      const response = await fetchImpl(
+        resourceUrl(
+          `/resourceGroups/${input.resourceGroup}/providers/Microsoft.Web/sites/${input.name}/config/appsettings/list`,
+          "2023-12-01",
+        ),
+        {
+          method: "POST",
+          headers: await headers(),
+        },
+      );
+
+      if (response.status === 404) {
+        return { exists: false as const, settings: {} };
+      }
+
+      const data = await readJson<{ properties?: unknown }>(response);
+
+      return {
+        exists: true as const,
+        settings: toStringSettings(data.properties),
+      };
     },
     async deleteWebApp(input: {
       resourceGroup: string;

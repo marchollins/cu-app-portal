@@ -55,6 +55,24 @@ function createDeps(
     },
     arm: {
       appServicePlanId: vi.fn(() => "/plans/asp-cu-apps-published"),
+      getAppSettings: vi.fn().mockResolvedValue({
+        exists: true,
+        settings: {
+          DATABASE_URL: "postgresql://example",
+          AUTH_URL: "https://app-campus-dashboard.azurewebsites.net",
+          NEXTAUTH_URL: "https://app-campus-dashboard.azurewebsites.net",
+          AUTH_SECRET: "auth-secret",
+          AUTH_MICROSOFT_ENTRA_ID_ID: "entra-client-id",
+          AUTH_MICROSOFT_ENTRA_ID_SECRET: "entra-client-secret",
+          AUTH_MICROSOFT_ENTRA_ID_ISSUER:
+            "https://login.microsoftonline.com/tenant/v2.0",
+          NODE_ENV: "production",
+          SCM_DO_BUILD_DURING_DEPLOYMENT: "false",
+          ENABLE_ORYX_BUILD: "false",
+          WEBSITE_RUN_FROM_PACKAGE: "1",
+          EXISTING_CUSTOM_SETTING: "keep-me",
+        },
+      }),
       putPostgresDatabase: vi.fn(),
       putWebApp: vi.fn().mockResolvedValue({
         properties: {
@@ -77,7 +95,8 @@ function createDeps(
     },
     github: {
       readRepositoryTextFiles: vi.fn().mockResolvedValue({
-        ".github/workflows/deploy-azure-app-service.yml": "name: Deploy",
+        ".github/workflows/deploy-azure-app-service.yml":
+          "name: Deploy\non:\n  workflow_dispatch:\n",
       }),
       getActionsSecret: vi.fn().mockResolvedValue({ exists: true }),
       deleteActionsSecret: vi.fn(),
@@ -106,7 +125,9 @@ describe("publishing setup service", () => {
   });
 
   it("marks setup ready when preflight checks pass", async () => {
-    await preflightPublishingSetup("req_123", createDeps());
+    const deps = createDeps();
+
+    await preflightPublishingSetup("req_123", deps);
 
     expect(prisma.publishSetupCheck.upsert).toHaveBeenCalledTimes(7);
     expect(prisma.appRequest.update).toHaveBeenCalledWith({
@@ -116,6 +137,13 @@ describe("publishing setup service", () => {
         publishingSetupErrorSummary: null,
       }),
     });
+    expect(deps.arm.putPostgresDatabase).not.toHaveBeenCalled();
+    expect(deps.arm.putWebApp).not.toHaveBeenCalled();
+    expect(deps.arm.putAppSettings).not.toHaveBeenCalled();
+    expect(deps.graph.ensureRedirectUri).not.toHaveBeenCalled();
+    expect(deps.graph.replaceFederatedCredential).not.toHaveBeenCalled();
+    expect(deps.github.deleteActionsSecret).not.toHaveBeenCalled();
+    expect(deps.github.setActionsSecret).not.toHaveBeenCalled();
   });
 
   it("marks setup needs repair when a required secret is missing", async () => {
@@ -155,17 +183,71 @@ describe("publishing setup service", () => {
     );
   });
 
+  it("marks setup needs repair when required Azure app settings are missing", async () => {
+    const baseDeps = createDeps();
+    const deps = createDeps({
+      arm: {
+        ...baseDeps.arm,
+        getAppSettings: vi.fn().mockResolvedValue({
+          exists: true,
+          settings: {
+            DATABASE_URL: "postgresql://example",
+            NODE_ENV: "production",
+          },
+        }),
+      },
+    });
+
+    await preflightPublishingSetup("req_123", deps);
+
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "req_123" },
+      data: expect.objectContaining({
+        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupErrorSummary:
+          "Required Azure App Service settings are missing.",
+      }),
+    });
+  });
+
+  it("marks workflow dispatch readiness pass only when static dispatch proof exists", async () => {
+    await preflightPublishingSetup("req_123", createDeps());
+
+    expect(prisma.publishSetupCheck.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          checkKey: "github_workflow_dispatch",
+          status: "PASS",
+          message: "Workflow dispatch can be attempted from the default branch.",
+          metadata: {
+            branch: "main",
+            workflowPath: ".github/workflows/deploy-azure-app-service.yml",
+          },
+        }),
+      }),
+    );
+  });
+
   it("repairs setup without dispatching a deployment workflow", async () => {
     const deps = createDeps();
 
     await repairPublishingSetup("req_123", deps);
 
-    expect(deps.github.deleteActionsSecret).toHaveBeenCalledWith(
-      expect.objectContaining({ secretName: "AZURE_CLIENT_ID" }),
-    );
-    expect(deps.github.setActionsSecret).toHaveBeenCalledWith(
-      expect.objectContaining({ secretName: "AZURE_CLIENT_ID" }),
-    );
+    expect(deps.github.deleteActionsSecret).toHaveBeenCalledTimes(4);
+    expect(deps.github.setActionsSecret).toHaveBeenCalledTimes(4);
+    for (const secretName of [
+      "AZURE_CLIENT_ID",
+      "AZURE_TENANT_ID",
+      "AZURE_SUBSCRIPTION_ID",
+      "AZURE_WEBAPP_NAME",
+    ]) {
+      expect(deps.github.deleteActionsSecret).toHaveBeenCalledWith(
+        expect.objectContaining({ secretName }),
+      );
+      expect(deps.github.setActionsSecret).toHaveBeenCalledWith(
+        expect.objectContaining({ secretName }),
+      );
+    }
     expect(deps.graph.replaceFederatedCredential).toHaveBeenCalledWith(
       expect.objectContaining({
         applicationAppId: "azure-client-id",
@@ -179,6 +261,39 @@ describe("publishing setup service", () => {
       data: expect.objectContaining({
         publishingSetupStatus: "READY",
         publishingSetupErrorSummary: null,
+      }),
+    });
+  });
+
+  it("preserves custom primary publish URL and merges app settings during repair", async () => {
+    const deps = createDeps();
+    vi.mocked(prisma.appRequest.findUnique).mockResolvedValue(
+      {
+        ...appRequest,
+        primaryPublishUrl: "https://campus-dashboard.cedarville.edu",
+      } as Awaited<ReturnType<typeof prisma.appRequest.findUnique>>,
+    );
+
+    await repairPublishingSetup("req_123", deps);
+
+    expect(deps.arm.putAppSettings).toHaveBeenCalledWith({
+      resourceGroup: "rg-cu-apps-published",
+      name: "app-campus-dashboard-req123",
+      settings: expect.objectContaining({
+        EXISTING_CUSTOM_SETTING: "keep-me",
+        AUTH_URL: "https://campus-dashboard.cedarville.edu",
+        NEXTAUTH_URL: "https://campus-dashboard.cedarville.edu",
+      }),
+    });
+    expect(deps.graph.ensureRedirectUri).toHaveBeenCalledWith({
+      applicationObjectId: "entra-object-id",
+      redirectUri:
+        "https://campus-dashboard.cedarville.edu/api/auth/callback/microsoft-entra-id",
+    });
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "req_123" },
+      data: expect.objectContaining({
+        primaryPublishUrl: "https://campus-dashboard.cedarville.edu",
       }),
     });
   });

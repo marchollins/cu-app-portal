@@ -21,6 +21,8 @@ const SAFE_METADATA_KEYS = new Set([
   "resourcegroup",
   "secretname",
   "secretnames",
+  "missingsettingnames",
+  "settingnames",
   "statuscode",
   "step",
   "subject",
@@ -29,9 +31,14 @@ const SAFE_METADATA_KEYS = new Set([
 ]);
 
 type PersistPublishingSetupChecksInput = {
+  prisma?: {
+    $transaction(operations: Promise<unknown>[]): Promise<unknown>;
+    publishSetupCheck: typeof prisma.publishSetupCheck;
+  };
   appRequestId: string;
   checks: PublishingSetupCheckResult[];
   checkedAt: Date;
+  additionalOperations?: Promise<unknown>[];
 };
 
 function normalizeMetadataKey(key: string) {
@@ -97,36 +104,41 @@ function sanitizeMetadata(metadata: unknown): Prisma.InputJsonObject {
 }
 
 export async function persistPublishingSetupChecks({
+  prisma: prismaClient = prisma,
   appRequestId,
   checks,
   checkedAt,
+  additionalOperations = [],
 }: PersistPublishingSetupChecksInput) {
-  await prisma.$transaction(
-    checks.map((check) => {
-      const metadata = sanitizeMetadata(check.metadata);
+  await prismaClient.$transaction(
+    [
+      ...checks.map((check) => {
+        const metadata = sanitizeMetadata(check.metadata);
 
-      return prisma.publishSetupCheck.upsert({
-        where: {
-          appRequestId_checkKey: {
+        return prismaClient.publishSetupCheck.upsert({
+          where: {
+            appRequestId_checkKey: {
+              appRequestId,
+              checkKey: check.checkKey,
+            },
+          },
+          create: {
             appRequestId,
             checkKey: check.checkKey,
+            status: check.status,
+            message: check.message,
+            metadata,
+            checkedAt,
           },
-        },
-        create: {
-          appRequestId,
-          checkKey: check.checkKey,
-          status: check.status,
-          message: check.message,
-          metadata,
-          checkedAt,
-        },
-        update: {
-          status: check.status,
-          message: check.message,
-          metadata,
-          checkedAt,
-        },
-      });
-    }),
+          update: {
+            status: check.status,
+            message: check.message,
+            metadata,
+            checkedAt,
+          },
+        });
+      }),
+      ...additionalOperations,
+    ],
   );
 }
