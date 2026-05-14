@@ -50,6 +50,10 @@ function getDisplayPublishUrl(
 
 const PREPARATION_REQUIRED_MESSAGE =
   "Azure publishing unavailable until repository preparation is committed.";
+const SETUP_REPAIR_REQUIRED_MESSAGE =
+  "Repair publishing setup before publishing.";
+const SETUP_READY_REQUIRED_MESSAGE =
+  "Publishing setup must be ready before publishing.";
 
 function isImportedRepositoryPrepared(
   sourceOfTruth: string,
@@ -62,6 +66,42 @@ function isImportedRepositoryPrepared(
 
 function needsPublishingSetupRepair(status: string | null | undefined) {
   return status === "NEEDS_REPAIR" || status === "BLOCKED";
+}
+
+function isPublishingSetupBlocking(status: string | null | undefined) {
+  return (
+    status === "NEEDS_REPAIR" ||
+    status === "REPAIRING" ||
+    status === "BLOCKED"
+  );
+}
+
+function canPublishWithSetup(
+  sourceOfTruth: string | null | undefined,
+  publishingSetupStatus: string | null | undefined,
+) {
+  const status = publishingSetupStatus ?? "NOT_CHECKED";
+
+  if (sourceOfTruth === "IMPORTED_REPOSITORY") {
+    return status === "READY";
+  }
+
+  return status === "NOT_CHECKED" || status === "READY";
+}
+
+function getPublishingSetupBlockMessage(
+  sourceOfTruth: string | null | undefined,
+  publishingSetupStatus: string | null | undefined,
+) {
+  if (isPublishingSetupBlocking(publishingSetupStatus)) {
+    return SETUP_REPAIR_REQUIRED_MESSAGE;
+  }
+
+  if (!canPublishWithSetup(sourceOfTruth, publishingSetupStatus)) {
+    return SETUP_READY_REQUIRED_MESSAGE;
+  }
+
+  return null;
 }
 
 function renderPublishingSetupStatus(request: {
@@ -336,10 +376,15 @@ function renderPublishAction({
     return <p>{PREPARATION_REQUIRED_MESSAGE}</p>;
   }
 
-  if (needsPublishingSetupRepair(publishingSetupStatus)) {
+  const setupBlockMessage = getPublishingSetupBlockMessage(
+    sourceOfTruth,
+    publishingSetupStatus,
+  );
+
+  if (setupBlockMessage) {
     return (
       <p style={{ color: "var(--text-secondary)", fontSize: "0.9375rem" }}>
-        Repair publishing setup before publishing.
+        {setupBlockMessage}
       </p>
     );
   }

@@ -269,6 +269,8 @@ describe("DownloadPage", () => {
       repositoryAccessNote: null,
       repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
       publishStatus: "NOT_STARTED",
+      publishingSetupStatus: "READY",
+      publishingSetupErrorSummary: null,
       publishUrl: null,
       primaryPublishUrl: null,
       azureWebAppName: null,
@@ -329,6 +331,8 @@ describe("DownloadPage", () => {
       repositoryAccessNote: null,
       repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
       publishStatus: "NOT_STARTED",
+      publishingSetupStatus: "READY",
+      publishingSetupErrorSummary: null,
       publishUrl: null,
       primaryPublishUrl: null,
       azureWebAppName: null,
@@ -386,6 +390,8 @@ describe("DownloadPage", () => {
       repositoryAccessNote: null,
       repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
       publishStatus: "NOT_STARTED",
+      publishingSetupStatus: "READY",
+      publishingSetupErrorSummary: null,
       publishUrl: null,
       primaryPublishUrl: null,
       azureWebAppName: null,
@@ -443,6 +449,8 @@ describe("DownloadPage", () => {
       repositoryAccessNote: null,
       repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
       publishStatus: "NOT_STARTED",
+      publishingSetupStatus: "READY",
+      publishingSetupErrorSummary: null,
       publishUrl: null,
       primaryPublishUrl: null,
       azureWebAppName: null,
@@ -506,6 +514,56 @@ describe("DownloadPage", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       expect.stringContaining("git push portal HEAD:trunk"),
     );
+  });
+
+  it("hides publish actions for committed imported apps until setup is ready", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_import_not_checked",
+      appName: "Campus Dashboard",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      repositoryDefaultBranch: "trunk",
+      repositoryStatus: "READY",
+      repositoryAccessStatus: "GRANTED",
+      repositoryAccessNote: null,
+      repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+      publishStatus: "NOT_STARTED",
+      publishingSetupStatus: "NOT_CHECKED",
+      publishingSetupErrorSummary: null,
+      publishUrl: null,
+      primaryPublishUrl: null,
+      azureWebAppName: null,
+      publishErrorSummary: null,
+      repositoryImport: {
+        sourceRepositoryUrl: "https://github.com/example/campus-dashboard",
+        importStatus: "SUCCEEDED",
+        preparationStatus: "COMMITTED",
+      },
+      artifact: {
+        id: "artifact-import-not-checked",
+      },
+      publishAttempts: [],
+      publishSetupChecks: [],
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(
+      await DownloadPage({
+        params: Promise.resolve({ requestId: "req_import_not_checked" }),
+      }),
+    );
+
+    expect(
+      screen.getByText(/publishing setup must be ready before publishing/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /publish to azure/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /repair publishing setup/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows repair instead of publish when publishing setup is blocked", async () => {
@@ -575,6 +633,50 @@ describe("DownloadPage", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /retry publish/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides publish without a repair button while publishing setup is repairing", async () => {
+    vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "req_setup_repairing",
+      appName: "Campus Dashboard",
+      sourceOfTruth: "PORTAL_MANAGED_REPO",
+      repositoryStatus: "READY",
+      repositoryAccessStatus: "GRANTED",
+      repositoryAccessNote: null,
+      repositoryUrl: "https://github.com/cedarville-it/campus-dashboard",
+      publishStatus: "NOT_STARTED",
+      publishingSetupStatus: "REPAIRING",
+      publishingSetupErrorSummary: null,
+      publishUrl: null,
+      primaryPublishUrl: null,
+      azureWebAppName: null,
+      publishErrorSummary: null,
+      artifact: {
+        id: "artifact-setup-repairing",
+      },
+      publishAttempts: [],
+      publishSetupChecks: [],
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      githubUsername: "portalstaff",
+    } as Awaited<ReturnType<typeof prisma.user.findUnique>>);
+
+    render(
+      await DownloadPage({
+        params: Promise.resolve({ requestId: "req_setup_repairing" }),
+      }),
+    );
+
+    expect(
+      screen.getByText(/repair publishing setup before publishing/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /publish to azure/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /repair publishing setup/i }),
     ).not.toBeInTheDocument();
   });
 
