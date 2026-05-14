@@ -133,6 +133,7 @@ describe("publishing actions", () => {
       userId: "user-123",
       repositoryStatus: "READY",
       publishStatus: "NOT_STARTED",
+      publishingSetupStatus: "READY",
     } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
     vi.mocked(prisma.publishAttempt.create).mockResolvedValue({
       id: "attempt-123",
@@ -162,6 +163,94 @@ describe("publishing actions", () => {
     });
   });
 
+  it.each(["NEEDS_REPAIR", "REPAIRING", "BLOCKED"] as const)(
+    "rejects publish requests when publishing setup is %s",
+    async (publishingSetupStatus) => {
+      vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+      vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+        id: "request-123",
+        userId: "user-123",
+        repositoryStatus: "READY",
+        publishStatus: "NOT_STARTED",
+        sourceOfTruth: "PORTAL_MANAGED_REPO",
+        publishingSetupStatus,
+      } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+
+      await expect(publishToAzureAction("request-123")).rejects.toThrow(
+        "Publishing setup must be repaired before publishing.",
+      );
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.publishAttempt.create).not.toHaveBeenCalled();
+      expect(runPublishAttempt).not.toHaveBeenCalled();
+    },
+  );
+
+  it("allows generated app publish requests before setup has been checked", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "request-123",
+      userId: "user-123",
+      repositoryStatus: "READY",
+      publishStatus: "NOT_STARTED",
+      publishingSetupStatus: "NOT_CHECKED",
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+    vi.mocked(prisma.publishAttempt.create).mockResolvedValue({
+      id: "attempt-123",
+    } as Awaited<ReturnType<typeof prisma.publishAttempt.create>>);
+
+    await publishToAzureAction("request-123");
+
+    expect(prisma.publishAttempt.create).toHaveBeenCalled();
+    expect(runPublishAttempt).toHaveBeenCalledWith("attempt-123");
+  });
+
+  it("rejects imported app publish requests until setup is ready", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "request-123",
+      userId: "user-123",
+      repositoryStatus: "READY",
+      publishStatus: "NOT_STARTED",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      publishingSetupStatus: "NOT_CHECKED",
+      repositoryImport: {
+        preparationStatus: "COMMITTED",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+
+    await expect(publishToAzureAction("request-123")).rejects.toThrow(
+      "Imported app publishing setup must be ready before publishing.",
+    );
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.publishAttempt.create).not.toHaveBeenCalled();
+    expect(runPublishAttempt).not.toHaveBeenCalled();
+  });
+
+  it("rejects imported app retry requests until setup is ready", async () => {
+    vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
+    vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
+      id: "request-123",
+      userId: "user-123",
+      repositoryStatus: "READY",
+      publishStatus: "FAILED",
+      sourceOfTruth: "IMPORTED_REPOSITORY",
+      publishingSetupStatus: "CHECKING",
+      repositoryImport: {
+        preparationStatus: "COMMITTED",
+      },
+    } as Awaited<ReturnType<typeof prisma.appRequest.findFirst>>);
+
+    await expect(retryPublishAction("request-123")).rejects.toThrow(
+      "Imported app publishing setup must be ready before publishing.",
+    );
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.publishAttempt.create).not.toHaveBeenCalled();
+    expect(runPublishAttempt).not.toHaveBeenCalled();
+  });
+
   it("rejects imported app publish requests before repository preparation is committed", async () => {
     vi.mocked(resolveCurrentUserId).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
@@ -170,6 +259,7 @@ describe("publishing actions", () => {
       repositoryStatus: "READY",
       publishStatus: "NOT_STARTED",
       sourceOfTruth: "IMPORTED_REPOSITORY",
+      publishingSetupStatus: "READY",
       repositoryImport: {
         preparationStatus: "PENDING_USER_CHOICE",
       },

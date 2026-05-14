@@ -7,6 +7,7 @@ import { createAzureArmClient } from "./azure/arm-client";
 import { loadAzurePublishConfig } from "./azure/config";
 import { createMicrosoftGraphClient } from "./azure/graph-client";
 import { createAzurePublishRuntime } from "./azure/runtime";
+import { classifyPublishingSetupError } from "./setup/status";
 
 export type ProvisionedPublishTarget = {
   azureResourceGroup: string;
@@ -125,6 +126,8 @@ export async function runPublishAttempt(
     requestId: attempt.appRequestId,
   });
 
+  let deploymentDispatchMayHaveStarted = false;
+
   try {
     const effectiveRuntime = runtime ?? createDefaultRuntime();
 
@@ -169,6 +172,7 @@ export async function runPublishAttempt(
       requestId: attempt.appRequestId,
     });
 
+    deploymentDispatchMayHaveStarted = true;
     const deployment = await effectiveRuntime.deployRepository(
       attempt.appRequestId,
     );
@@ -249,6 +253,23 @@ export async function runPublishAttempt(
   } catch (error) {
     const errorSummary =
       error instanceof Error ? error.message : "Unknown publish error";
+    const setupFailure = deploymentDispatchMayHaveStarted
+      ? null
+      : classifyPublishingSetupError({
+          step: "azure_resource_access",
+          error,
+        });
+    const appRequestFailureData = setupFailure
+      ? {
+          publishStatus: "FAILED" as const,
+          publishErrorSummary: `Publishing setup failed: ${setupFailure.summary}`,
+          publishingSetupStatus: setupFailure.setupStatus,
+          publishingSetupErrorSummary: setupFailure.summary,
+        }
+      : {
+          publishStatus: "FAILED" as const,
+          publishErrorSummary: errorSummary,
+        };
     const finishedAt = new Date();
 
     console.error("[publish-worker]", "failed", {
@@ -270,10 +291,7 @@ export async function runPublishAttempt(
 
     await prisma.appRequest.update({
       where: { id: attempt.appRequestId },
-      data: {
-        publishStatus: "FAILED",
-        publishErrorSummary: errorSummary,
-      },
+      data: appRequestFailureData,
     });
 
     await recordAuditEvent("PUBLISH_FAILED", {

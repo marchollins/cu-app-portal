@@ -15,6 +15,12 @@ import {
 
 type QueueablePublishStatus = "NOT_STARTED" | "SUCCEEDED" | "FAILED";
 
+const BLOCKING_SETUP_STATUSES = new Set([
+  "NEEDS_REPAIR",
+  "REPAIRING",
+  "BLOCKED",
+]);
+
 async function loadOwnedAppRequest(requestId: string) {
   const userId = await resolveCurrentUserId();
   const appRequest = await prisma.appRequest.findFirst({
@@ -104,12 +110,25 @@ async function queuePublishAttempt(
     throw new Error("Managed repository is not ready for publishing.");
   }
 
+  if (BLOCKING_SETUP_STATUSES.has(appRequest.publishingSetupStatus)) {
+    throw new Error("Publishing setup must be repaired before publishing.");
+  }
+
   if (
     appRequest.sourceOfTruth === "IMPORTED_REPOSITORY" &&
     appRequest.repositoryImport?.preparationStatus !== "COMMITTED"
   ) {
     throw new Error(
       "Imported app repository preparation must be committed before publishing.",
+    );
+  }
+
+  if (
+    appRequest.sourceOfTruth === "IMPORTED_REPOSITORY" &&
+    appRequest.publishingSetupStatus !== "READY"
+  ) {
+    throw new Error(
+      "Imported app publishing setup must be ready before publishing.",
     );
   }
 
