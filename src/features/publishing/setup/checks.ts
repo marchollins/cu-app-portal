@@ -6,10 +6,35 @@ const SECRET_METADATA_KEYS = new Set([
   "secret",
   "secretvalue",
   "token",
+  "accesstoken",
+  "refreshtoken",
+  "clientsecret",
   "privatekey",
+  "signingkey",
+  "apikey",
+  "password",
+  "credentials",
+  "rawcredentials",
   "connectionstring",
   "databaseurl",
 ]);
+
+const SAFE_SENSITIVE_IDENTIFIER_KEYS = new Set([
+  "credentialid",
+  "credentialname",
+  "secretname",
+  "secretnames",
+]);
+
+const SECRET_METADATA_KEY_PARTS = [
+  "secret",
+  "token",
+  "password",
+  "credential",
+  "key",
+  "connectionstring",
+  "databaseurl",
+];
 
 type PersistPublishingSetupChecksInput = {
   appRequestId: string;
@@ -18,7 +43,16 @@ type PersistPublishingSetupChecksInput = {
 };
 
 function isSecretMetadataKey(key: string) {
-  return SECRET_METADATA_KEYS.has(key.toLowerCase());
+  const normalizedKey = key.toLowerCase();
+
+  if (SAFE_SENSITIVE_IDENTIFIER_KEYS.has(normalizedKey)) {
+    return false;
+  }
+
+  return (
+    SECRET_METADATA_KEYS.has(normalizedKey) ||
+    SECRET_METADATA_KEY_PARTS.some((part) => normalizedKey.includes(part))
+  );
 }
 
 function sanitizeJsonValue(value: unknown): Prisma.InputJsonValue | undefined {

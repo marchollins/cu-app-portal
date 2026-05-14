@@ -139,6 +139,63 @@ describe("persistPublishingSetupChecks", () => {
     );
   });
 
+  it("removes common sensitive key variants while preserving safe identifiers", async () => {
+    await persistPublishingSetupChecks({
+      appRequestId: "request-123",
+      checkedAt: new Date("2026-05-14T16:07:00.000Z"),
+      checks: [
+        {
+          checkKey: "github_federated_credential",
+          status: "FAIL",
+          message: "Federated credential is missing.",
+          metadata: {
+            repairable: true,
+            secretNames: ["AZURE_CLIENT_ID"],
+            credentialName: "portal-managed-main",
+            credentialId: "credential-123",
+            accessToken: "access-token",
+            clientSecret: "client-secret",
+            credentials: {
+              clientId: "client-id",
+              clientSecret: "nested-client-secret",
+            },
+            rawCredentials: "raw-secret-json",
+            password: "database-password",
+            apiKey: "api-key",
+            nested: {
+              refreshToken: "refresh-token",
+              signingKey: "signing-key",
+              privateKeyId: "private-key-id",
+              databaseUrlValue: "postgresql://example.test/db",
+              connectionStringValue: "connection-string",
+              credentialName: "nested-credential-name",
+              secretNames: ["AZURE_TENANT_ID"],
+              status: "missing",
+            },
+          },
+        },
+      ],
+    });
+
+    expect(prisma.publishSetupCheck.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          metadata: {
+            repairable: true,
+            secretNames: ["AZURE_CLIENT_ID"],
+            credentialName: "portal-managed-main",
+            credentialId: "credential-123",
+            nested: {
+              credentialName: "nested-credential-name",
+              secretNames: ["AZURE_TENANT_ID"],
+              status: "missing",
+            },
+          },
+        }),
+      }),
+    );
+  });
+
   it("persists a non-null metadata object when metadata is not an object", async () => {
     await persistPublishingSetupChecks({
       appRequestId: "request-123",
