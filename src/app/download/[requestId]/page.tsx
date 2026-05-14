@@ -65,7 +65,7 @@ function isImportedRepositoryPrepared(
 }
 
 function needsPublishingSetupRepair(status: string | null | undefined) {
-  return status === "NEEDS_REPAIR" || status === "BLOCKED";
+  return status === "NEEDS_REPAIR";
 }
 
 function isPublishingSetupBlocking(status: string | null | undefined) {

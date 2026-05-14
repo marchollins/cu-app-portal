@@ -566,7 +566,7 @@ describe("DownloadPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows repair instead of publish when publishing setup is blocked", async () => {
+  it("hides publish without a repair button when publishing setup is blocked", async () => {
     vi.mocked(getCurrentUserIdOrNull).mockResolvedValue("user-123");
     vi.mocked(prisma.appRequest.findFirst).mockResolvedValue({
       id: "req_setup_blocked",
@@ -621,11 +621,6 @@ describe("DownloadPage", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      within(setupStatus).getByRole("button", {
-        name: /repair publishing setup/i,
-      }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByText(/repair publishing setup before publishing/i),
     ).toBeInTheDocument();
     expect(
@@ -633,6 +628,9 @@ describe("DownloadPage", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /retry publish/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /repair publishing setup/i }),
     ).not.toBeInTheDocument();
   });
 
