@@ -36,8 +36,9 @@ export default async function AddExistingAppPage() {
       <div className="page-header">
         <h1>Add Existing App</h1>
         <p>
-          Import an existing GitHub repository so the portal can manage Azure
-          publishing for it.
+          Connect an existing GitHub repository so the portal can handle Azure
+          publishing for it. You&rsquo;ll find the repository URL on GitHub by
+          opening the repository and copying the address from your browser.
         </p>
       </div>
 
@@ -55,6 +56,9 @@ export default async function AddExistingAppPage() {
               placeholder="https://github.com/owner/repo"
               className="form-control"
             />
+            <p style={{ fontSize: "0.8125rem", color: "var(--text-muted)", marginTop: "0.375rem" }}>
+              The web address of the repository — looks like <code>https://github.com/your-org/your-repo</code>
+            </p>
           </div>
 
           <div className="form-group">
@@ -84,10 +88,11 @@ export default async function AddExistingAppPage() {
 
           <div>
             <PendingSubmitButton
-              idleLabel="Analyze Repository"
-              pendingLabel="Analyzing Repository..."
-              statusText="Analyzing repository and preparing import. This can take a moment."
+              idleLabel="Check Repository"
+              pendingLabel="Checking Repository..."
+              statusText="Checking your repository for compatibility and preparing to import. This can take a moment."
               variant="primary-solid"
+              title="Checks whether the repository is compatible with Azure publishing and begins setting it up in the portal"
             />
           </div>
         </form>

@@ -48,7 +48,7 @@ function getDisplayPublishUrl(
 }
 
 const PREPARATION_REQUIRED_MESSAGE =
-  "Azure publishing unavailable until repository preparation is committed.";
+  "Publishing is unavailable until the publishing setup has been applied to your repository.";
 
 function isImportedRepositoryPrepared(
   sourceOfTruth: string,
@@ -134,16 +134,16 @@ function renderImportedRepositoryStatus({
       aria-label="Imported repository status"
       className="card card--gold-border"
     >
-      <p className="section-title">Imported Repository Status</p>
+      <p className="section-title">Publishing Setup Status</p>
       <div className="status-table" style={{ marginBottom: "1rem" }}>
         {repositoryImport.sourceRepositoryUrl ? (
-          <p>Source repo: {repositoryImport.sourceRepositoryUrl}</p>
+          <p>Original repository: {repositoryImport.sourceRepositoryUrl}</p>
         ) : null}
         {repositoryImport.importStatus ? (
-          <p>Import: {formatStatus(repositoryImport.importStatus)}</p>
+          <p>Copy status: {formatStatus(repositoryImport.importStatus)}</p>
         ) : null}
         {repositoryImport.importErrorSummary ? (
-          <p>Import error: {repositoryImport.importErrorSummary}</p>
+          <p>Copy error: {repositoryImport.importErrorSummary}</p>
         ) : null}
         {repositoryImport.compatibilityStatus ? (
           <p>
@@ -151,25 +151,25 @@ function renderImportedRepositoryStatus({
           </p>
         ) : null}
         {repositoryImport.preparationStatus ? (
-          <p>Preparation: {formatStatus(repositoryImport.preparationStatus)}</p>
+          <p>Publishing setup: {formatStatus(repositoryImport.preparationStatus)}</p>
         ) : null}
         {repositoryImport.preparationPullRequestUrl ? (
           <p>
-            Preparation PR:{" "}
+            Review link:{" "}
             <a href={repositoryImport.preparationPullRequestUrl}>
               {repositoryImport.preparationPullRequestUrl}
             </a>
           </p>
         ) : null}
         {repositoryImport.preparationErrorSummary ? (
-          <p>Preparation error: {repositoryImport.preparationErrorSummary}</p>
+          <p>Setup error: {repositoryImport.preparationErrorSummary}</p>
         ) : null}
       </div>
       {hasPublishingFileConflict ? (
         <div className="warning-box" style={{ marginBottom: "1rem" }}>
-          The portal will not overwrite existing publishing files directly. Open
-          a PR to review the generated changes in Git, or resolve them manually
-          and verify readiness here.
+          Your repository already contains publishing configuration files. The
+          portal can open a review page on GitHub so you can approve the
+          changes, or you can resolve them manually and confirm readiness here.
         </div>
       ) : null}
       {repositoryImport.preparationStatus === "PENDING_USER_CHOICE" ? (
@@ -183,21 +183,23 @@ function renderImportedRepositoryStatus({
               value="DIRECT_COMMIT"
             />
             <PendingSubmitButton
-              idleLabel="Commit Azure Publishing Additions"
-              pendingLabel="Committing Azure Publishing Additions..."
-              statusText="Committing Azure publishing additions. This can take a moment."
+              idleLabel="Apply Publishing Setup"
+              pendingLabel="Applying Publishing Setup..."
+              statusText="Saving publishing configuration to your repository. This can take a moment."
               variant="primary-solid"
               size="sm"
+              title="Saves the publishing configuration files directly to your repository so Azure can deploy your app"
             />
           </form>
           <form action={prepareAction}>
             <input name="preparationMode" type="hidden" value="PULL_REQUEST" />
             <PendingSubmitButton
-              idleLabel="Open Azure Publishing PR"
-              pendingLabel="Opening Azure Publishing PR..."
-              statusText="Opening Azure publishing pull request. This can take a moment."
+              idleLabel="Review Publishing Changes"
+              pendingLabel="Opening review page..."
+              statusText="Opening a review page on GitHub. This can take a moment."
               variant="ghost"
               size="sm"
+              title="Opens a page on GitHub where you can review and approve the publishing configuration changes before they're applied"
             />
           </form>
         </div>
@@ -206,11 +208,12 @@ function renderImportedRepositoryStatus({
         <form action={prepareAction}>
           <input name="preparationMode" type="hidden" value="PULL_REQUEST" />
           <PendingSubmitButton
-            idleLabel="Open Azure Publishing PR"
-            pendingLabel="Opening Azure Publishing PR..."
-            statusText="Opening Azure publishing pull request. This can take a moment."
+            idleLabel="Review Publishing Changes"
+            pendingLabel="Opening review page..."
+            statusText="Opening a review page on GitHub. This can take a moment."
             variant="primary-solid"
             size="sm"
+            title="Opens a page on GitHub where you can review and approve the publishing configuration changes before they're applied"
           />
         </form>
       ) : null}
@@ -222,9 +225,9 @@ function renderImportedRepositoryStatus({
             value={retryPreparationMode ?? ""}
           />
           <PendingSubmitButton
-            idleLabel="Retry Azure Publishing Preparation"
-            pendingLabel="Retrying Azure Publishing Preparation..."
-            statusText="Retrying Azure publishing preparation. This can take a moment."
+            idleLabel="Retry Publishing Setup"
+            pendingLabel="Retrying Publishing Setup..."
+            statusText="Retrying publishing setup. This can take a moment."
             variant="primary-solid"
             size="sm"
           />
@@ -235,13 +238,18 @@ function renderImportedRepositoryStatus({
           <PendingSubmitButton
             idleLabel={
               hasPublishingFileConflict
-                ? "Verify Repository Readiness"
-                : "Verify PR Merge"
+                ? "Confirm Repository is Ready"
+                : "Confirm Changes Were Merged"
             }
-            pendingLabel="Verifying Readiness..."
-            statusText="Checking the default branch for required publishing files."
+            pendingLabel="Checking..."
+            statusText="Checking the repository for required publishing files."
             variant="ghost"
             size="sm"
+            title={
+              hasPublishingFileConflict
+                ? "Check whether the conflicts in your repository have been resolved manually"
+                : "Check whether the publishing changes you approved on GitHub have been merged"
+            }
           />
         </form>
       ) : null}
@@ -267,9 +275,9 @@ function renderPublishAction({
     return (
       <form action={retryAction}>
         <PendingSubmitButton
-          idleLabel="Retry Repo Setup"
-          pendingLabel="Retrying Repo Setup…"
-          statusText="Retrying managed repo setup. This can take a moment."
+          idleLabel="Retry Repository Setup"
+          pendingLabel="Retrying Repository Setup…"
+          statusText="Retrying repository setup. This can take a moment."
           variant="primary"
         />
       </form>
@@ -413,13 +421,13 @@ export default async function DownloadPage({
 
         {/* Repository section */}
         <div className="card card--navy-border">
-          <p className="section-title">Managed Repository</p>
+          <p className="section-title">Your Code Repository</p>
           {appRequest.repositoryStatus === "READY" && appRequest.repositoryUrl ? (
             <>
               <div className="status-table" style={{ marginBottom: "1rem" }}>
                 <div className="status-row">
                   <span>
-                    Managed repo ready:{" "}
+                    Repository ready:{" "}
                     <a
                       href={appRequest.repositoryUrl}
                       target="_blank"
@@ -447,14 +455,13 @@ export default async function DownloadPage({
             </>
           ) : appRequest.repositoryStatus === "FAILED" ? (
             <div className="error-box">
-              Repo setup failed.
-              {appRequest.artifact ? " The ZIP is still available." : ""} An
-              operator may need to fix the GitHub App or org configuration before
-              portal publishing can continue.
+              Repository setup failed.
+              {appRequest.artifact ? " Your ZIP download is still available." : ""}{" "}
+              A portal administrator may need to fix the configuration before publishing can continue.
             </div>
           ) : (
             <div className="info-box">
-              Managed repo setup in progress — check back shortly.
+              Setting up your code repository — check back shortly.
             </div>
           )}
 
@@ -469,10 +476,10 @@ export default async function DownloadPage({
         {/* GitHub access section */}
         {appRequest.repositoryStatus === "READY" ? (
           <div className="card card--gold-border">
-            <p className="section-title">GitHub Access for Codex</p>
+            <p className="section-title">Connect Codex to Your Repository</p>
             {appRequest.repositoryAccessStatus === "GRANTED" ? (
               <div className="success-box">
-                Repo access granted
+                Repository access granted
                 {currentUser?.githubUsername
                   ? ` for @${currentUser.githubUsername}`
                   : ""}
@@ -486,15 +493,15 @@ export default async function DownloadPage({
                     marginBottom: "0.875rem",
                   }}
                 >
-                  Need Codex access to this repo?{" "}
+                  Want Codex to edit your app&rsquo;s code?{" "}
                   <a
                     href="https://github.com/signup"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Create a GitHub account
+                    Create a free GitHub account
                   </a>
-                  , then enter your username so the portal can invite you.
+                  , then enter your username below. The portal will send you an invite to the repository.
                 </p>
                 {appRequest.repositoryAccessNote ? (
                   <div
@@ -530,7 +537,7 @@ export default async function DownloadPage({
                   >
                     {appRequest.repositoryAccessStatus === "INVITED"
                       ? "Resend Repo Access Invite"
-                      : "Grant Repo Access"}
+                      : "Send Repository Invite"}
                   </button>
                 </form>
               </>
@@ -548,31 +555,33 @@ export default async function DownloadPage({
 
         {importedRepositoryRemoteWorkflow ? (
           <div className="card">
-            <p className="section-title">Imported Repository Workflow</p>
+            <p className="section-title">Syncing Your Local Code</p>
             <p>
-              Your local clone may still have origin pointed at the original
-              source repo. Keep that remote intact and add the portal-managed
-              repository as the publishing remote.
+              If you have a copy of this code on your computer, it is likely
+              still connected to the original source. Keep that connection and
+              also add the portal&rsquo;s repository as a second destination
+              for publishing. The commands below do this — run them in your
+              terminal inside the project folder.
             </p>
             <ol className="step-list">
               <li>
-                Add the portal remote:{" "}
+                Connect to the portal repository:{" "}
                 <code>
                   git remote add portal{" "}
                   {importedRepositoryRemoteWorkflow.portalRepositoryUrl}
                 </code>
               </li>
               <li>
-                Fetch portal updates: <code>git fetch portal</code>
+                Download the portal&rsquo;s latest files: <code>git fetch portal</code>
               </li>
               <li>
-                Pull portal changes before publishing work:{" "}
+                Sync portal changes into your local copy:{" "}
                 <code>
                   git pull portal {importedRepositoryRemoteWorkflow.defaultBranch}
                 </code>
               </li>
               <li>
-                Push completed work to the portal repo:{" "}
+                Send your completed work to the portal for publishing:{" "}
                 <code>
                   git push portal HEAD:
                   {importedRepositoryRemoteWorkflow.defaultBranch}
@@ -587,16 +596,15 @@ export default async function DownloadPage({
           <div className="card">
             <p className="section-title">Codex Workflow</p>
             <ol className="step-list">
-              <li>Open the managed repo locally in Codex on your machine.</li>
+              <li>Open your code repository in Codex on your computer.</li>
               <li>
-                Let Codex clone, customize, commit, and push your changes.
+                Let Codex download the code, make your customizations, and save the changes.
               </li>
               <li>
-                Return here when the repo is ready to publish to Azure.
+                Return here when you&rsquo;re ready to publish your app to Azure.
               </li>
               <li>
-                Use portal publishing instead of setting up Azure tooling
-                locally.
+                Use the Publish button on this page — no extra software needed on your computer.
               </li>
             </ol>
           </div>
@@ -638,8 +646,9 @@ export default async function DownloadPage({
                   target="_blank"
                   rel="noreferrer"
                   className="meta-link"
+                  title="View the automated process that deployed your app to Azure — useful for troubleshooting if a publish fails"
                 >
-                  GitHub workflow
+                  Deployment log
                 </a>
               </div>
             ) : null}

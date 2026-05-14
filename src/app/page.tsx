@@ -7,8 +7,9 @@ export default function HomePage() {
       <div className="hero">
         <h1>Cedarville App Portal</h1>
         <p>
-          Create Cedarville-approved apps, track your managed GitHub repository,
-          and publish directly to Azure — all from one place.
+          Create Cedarville-approved apps, store your code on GitHub (an online
+          platform for managing and sharing code), and publish directly to Azure
+          (Microsoft&rsquo;s cloud hosting service) — all from one place.
         </p>
         <div className="hero__actions">
           <Link href="/create" className="btn btn--secondary-solid btn--lg">
@@ -51,16 +52,19 @@ export default function HomePage() {
           <p style={{ fontSize: "1.75rem", margin: "0 0 0.5rem" }}>📦</p>
           <div className="card__title">Track</div>
           <p className="card__desc">
-            A managed GitHub repository is automatically set up for Codex
-            handoff. Grant access and let Codex clone, customize, and commit.
+            The portal sets up a private GitHub repository — an online space
+            where your app&rsquo;s code is stored. Add your GitHub username and
+            Codex (an AI coding assistant) can open the code, make your
+            customizations, and save the changes.
           </p>
         </div>
         <div className="card card--navy-border">
           <p style={{ fontSize: "1.75rem", margin: "0 0 0.5rem" }}>🚀</p>
           <div className="card__title">Publish</div>
           <p className="card__desc">
-            Deploy to Azure with a portal-supported workflow — no local Azure
-            tooling required. Return here to trigger and monitor your deploy.
+            Deploy your app to Azure directly from this portal — no extra
+            software needed on your computer. Return here to trigger and
+            monitor your app going live.
           </p>
         </div>
       </div>

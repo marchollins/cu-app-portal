@@ -23,7 +23,7 @@ import {
 import { prisma } from "@/lib/db";
 
 const PREPARATION_REQUIRED_MESSAGE =
-  "Azure publishing unavailable until repository preparation is committed.";
+  "Publishing is unavailable until the publishing setup has been applied to your repository.";
 
 type BadgeVariant = "success" | "error" | "warning" | "info" | "default";
 
@@ -65,7 +65,13 @@ function getDisplayPublishUrl(
 }
 
 function formatDeploymentMode(mode: string | null | undefined) {
-  return mode === "PUSH_TO_DEPLOY" ? "push to deploy" : "portal dispatch";
+  return mode === "PUSH_TO_DEPLOY" ? "auto-deploy" : "manual publish";
+}
+
+function deploymentModeTooltip(mode: string | null | undefined) {
+  return mode === "PUSH_TO_DEPLOY"
+    ? "Your app publishes to Azure automatically whenever code is updated in the repository."
+    : "You control when your app is published to Azure by clicking the Publish button here.";
 }
 
 function renderActionButton(
@@ -88,9 +94,9 @@ function renderActionButton(
     return (
       <form action={retryAction}>
         <PendingSubmitButton
-          idleLabel="Retry Repo Setup"
+          idleLabel="Retry Repository Setup"
           pendingLabel="Retrying..."
-          statusText="Retrying managed repo setup…"
+          statusText="Retrying repository setup. This can take a moment."
           variant="primary"
         />
       </form>
@@ -180,11 +186,12 @@ function renderPushToDeployButton(request: {
   return (
     <form action={enableAction}>
       <PendingSubmitButton
-        idleLabel="Enable push-to-deploy"
+        idleLabel="Enable Auto-Deploy"
         pendingLabel="Enabling..."
-        statusText="Enabling push-to-deploy for future default branch commits."
+        statusText="Enabling auto-deploy. Future code updates will publish automatically."
         variant="ghost"
         size="sm"
+        title="Turn on automatic publishing — your app will deploy to Azure whenever code is updated in the repository, without needing to click Publish"
       />
     </form>
   );
@@ -233,33 +240,33 @@ function renderImportedRepositoryStatus(request: {
   return (
     <section aria-label="Imported repository status" style={{ marginTop: "1rem" }}>
       <h3 style={{ fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.5rem", color: "var(--text-secondary)" }}>
-        Imported repository status
+        Publishing setup status
       </h3>
       <div className="status-table">
-        <p>Source repo: {repositoryImport.sourceRepositoryUrl}</p>
-        <p>Import: {formatStatus(repositoryImport.importStatus)}</p>
+        <p>Original repository: {repositoryImport.sourceRepositoryUrl}</p>
+        <p>Copy status: {formatStatus(repositoryImport.importStatus)}</p>
         {repositoryImport.importErrorSummary ? (
-          <p>Import error: {repositoryImport.importErrorSummary}</p>
+          <p>Copy error: {repositoryImport.importErrorSummary}</p>
         ) : null}
         <p>Compatibility: {formatStatus(repositoryImport.compatibilityStatus)}</p>
-        <p>Preparation: {formatStatus(repositoryImport.preparationStatus)}</p>
+        <p>Publishing setup: {formatStatus(repositoryImport.preparationStatus)}</p>
         {repositoryImport.preparationPullRequestUrl ? (
           <p>
-            Preparation PR:{" "}
+            Review link:{" "}
             <a href={repositoryImport.preparationPullRequestUrl}>
               {repositoryImport.preparationPullRequestUrl}
             </a>
           </p>
         ) : null}
         {repositoryImport.preparationErrorSummary ? (
-          <p>Preparation error: {repositoryImport.preparationErrorSummary}</p>
+          <p>Setup error: {repositoryImport.preparationErrorSummary}</p>
         ) : null}
       </div>
       {hasPublishingFileConflict ? (
         <div className="warning-box" style={{ marginTop: "0.75rem" }}>
-          The portal will not overwrite existing publishing files directly. Open
-          a PR to review the generated changes in Git, or resolve them manually
-          and verify readiness here.
+          Your repository already contains publishing configuration files. The
+          portal can open a review page on GitHub so you can approve the
+          changes, or you can resolve them manually and confirm readiness here.
         </div>
       ) : null}
       {repositoryImport.preparationStatus === "PENDING_USER_CHOICE" ? (
@@ -267,21 +274,23 @@ function renderImportedRepositoryStatus(request: {
           <form action={prepareAction}>
             <input name="preparationMode" type="hidden" value="DIRECT_COMMIT" />
             <PendingSubmitButton
-              idleLabel="Commit Azure Publishing Additions"
-              pendingLabel="Committing Azure Publishing Additions..."
-              statusText="Committing Azure publishing additions. This can take a moment."
+              idleLabel="Apply Publishing Setup"
+              pendingLabel="Applying Publishing Setup..."
+              statusText="Saving publishing configuration to your repository. This can take a moment."
               variant="primary-solid"
               size="sm"
+              title="Saves the publishing configuration files directly to your repository so Azure can deploy your app"
             />
           </form>
           <form action={prepareAction}>
             <input name="preparationMode" type="hidden" value="PULL_REQUEST" />
             <PendingSubmitButton
-              idleLabel="Open Azure Publishing PR"
-              pendingLabel="Opening Azure Publishing PR..."
-              statusText="Opening Azure publishing pull request. This can take a moment."
+              idleLabel="Review Publishing Changes"
+              pendingLabel="Opening review page..."
+              statusText="Opening a review page on GitHub. This can take a moment."
               variant="ghost"
               size="sm"
+              title="Opens a page on GitHub where you can review and approve the publishing configuration changes before they're applied"
             />
           </form>
         </div>
@@ -290,11 +299,12 @@ function renderImportedRepositoryStatus(request: {
         <form action={prepareAction} style={{ marginTop: "0.75rem" }}>
           <input name="preparationMode" type="hidden" value="PULL_REQUEST" />
           <PendingSubmitButton
-            idleLabel="Open Azure Publishing PR"
-            pendingLabel="Opening Azure Publishing PR..."
-            statusText="Opening Azure publishing pull request. This can take a moment."
+            idleLabel="Review Publishing Changes"
+            pendingLabel="Opening review page..."
+            statusText="Opening a review page on GitHub. This can take a moment."
             variant="primary-solid"
             size="sm"
+            title="Opens a page on GitHub where you can review and approve the publishing configuration changes before they're applied"
           />
         </form>
       ) : null}
@@ -306,9 +316,9 @@ function renderImportedRepositoryStatus(request: {
             value={retryPreparationMode ?? ""}
           />
           <PendingSubmitButton
-            idleLabel="Retry Azure Publishing Preparation"
-            pendingLabel="Retrying Azure Publishing Preparation..."
-            statusText="Retrying Azure publishing preparation. This can take a moment."
+            idleLabel="Retry Publishing Setup"
+            pendingLabel="Retrying Publishing Setup..."
+            statusText="Retrying publishing setup. This can take a moment."
             variant="primary-solid"
             size="sm"
           />
@@ -319,13 +329,18 @@ function renderImportedRepositoryStatus(request: {
           <PendingSubmitButton
             idleLabel={
               hasPublishingFileConflict
-                ? "Verify Repository Readiness"
-                : "Verify PR Merge"
+                ? "Confirm Repository is Ready"
+                : "Confirm Changes Were Merged"
             }
-            pendingLabel="Verifying Readiness..."
-            statusText="Checking the default branch for required publishing files."
+            pendingLabel="Checking..."
+            statusText="Checking the repository for required publishing files."
             variant="ghost"
             size="sm"
+            title={
+              hasPublishingFileConflict
+                ? "Check whether the conflicts in your repository have been resolved manually"
+                : "Check whether the publishing changes you approved on GitHub have been merged"
+            }
           />
         </form>
       ) : null}
@@ -362,7 +377,7 @@ function renderDeletePanel(request: {
             <legend>Resources to delete</legend>
             <label>
               <input name="deletePortal" type="checkbox" />
-              Delete portal record and generated ZIP
+              Remove this app from the portal (and delete the downloaded ZIP file)
             </label>
             {canDeleteGitHub ? (
               <label>
@@ -370,7 +385,8 @@ function renderDeletePanel(request: {
                 Delete GitHub repository{" "}
                 <code style={{ fontSize: "0.875em" }}>
                   {request.repositoryOwner}/{request.repositoryName}
-                </code>
+                </code>{" "}
+                <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(permanently removes your app&rsquo;s code from GitHub)</span>
               </label>
             ) : (
               <p
@@ -410,7 +426,7 @@ function renderDeletePanel(request: {
           </fieldset>
           <label>
             <input name="confirmDelete" type="checkbox" required />
-            I understand selected resources will be deleted.
+            I understand that the checked items will be permanently deleted.
           </label>
           <div>
             <PendingSubmitButton
@@ -519,27 +535,27 @@ export default async function MyAppsPage() {
                   <div className="app-card__statuses">
                     <span
                       className={`badge badge--${genBadge.variant}`}
-                      title="Generation"
+                      title="Whether your app files have been generated"
                     >
-                      Gen: {genBadge.label}
+                      Created: {genBadge.label}
                     </span>
                     <span
                       className={`badge badge--${repoBadge.variant}`}
-                      title="Repository"
+                      title="Whether your GitHub code repository is set up"
                     >
-                      Repo: {repoBadge.label}
+                      Repository: {repoBadge.label}
                     </span>
                     <span
                       className={`badge badge--${pubBadge.variant}`}
-                      title="Publish"
+                      title="Whether your app has been deployed to Azure"
                     >
-                      Publish: {pubBadge.label}
+                      Published: {pubBadge.label}
                     </span>
                     <span
                       className={`badge badge--${accessBadge.variant}`}
-                      title="Repo Access"
+                      title="Whether Codex has been invited to your code repository"
                     >
-                      Repo access: {accessBadge.label}
+                      Code access: {accessBadge.label}
                     </span>
                   </div>
 
@@ -562,8 +578,9 @@ export default async function MyAppsPage() {
                     ) : null}
                     {request.sourceOfTruth === "PORTAL_MANAGED_REPO" ? (
                       <div className="status-row">
-                        Deployment mode:{" "}
-                        {formatDeploymentMode(request.deploymentTriggerMode)}
+                        <span title={deploymentModeTooltip(request.deploymentTriggerMode)}>
+                          Publishing: {formatDeploymentMode(request.deploymentTriggerMode)}
+                        </span>
                       </div>
                     ) : null}
                     {request.azureWebAppName ? (
@@ -590,8 +607,9 @@ export default async function MyAppsPage() {
                           target="_blank"
                           rel="noreferrer"
                           className="meta-link"
+                          title="View the automated process that deploys your app to Azure — useful if a publish fails"
                         >
-                          GitHub workflow
+                          Deployment log
                         </a>
                       </div>
                     ) : null}
@@ -606,15 +624,15 @@ export default async function MyAppsPage() {
                           marginBottom: "0.75rem",
                         }}
                       >
-                        Need GitHub access for Codex?{" "}
+                        Want Codex to edit your app&rsquo;s code?{" "}
                         <a
                           href="https://github.com/signup"
                           target="_blank"
                           rel="noreferrer"
                         >
-                          Create a GitHub account
+                          Create a free GitHub account
                         </a>{" "}
-                        then enter your username below.
+                        then enter your username below. The portal will send you an invite to the repository.
                       </p>
                       <form
                         action={saveGitHubUsernameAndGrantAccessAction.bind(
@@ -639,10 +657,15 @@ export default async function MyAppsPage() {
                         <button
                           type="submit"
                           className="btn btn--secondary-solid btn--sm"
+                          title={
+                            request.repositoryAccessStatus === "INVITED"
+                              ? "Send another invitation email to the GitHub username entered above"
+                              : "Send a GitHub invitation so Codex can access and edit your app's code"
+                          }
                         >
                           {request.repositoryAccessStatus === "INVITED"
                             ? "Resend Invite"
-                            : "Grant Access"}
+                            : "Send Repository Invite"}
                         </button>
                       </form>
                     </div>

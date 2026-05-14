@@ -11,6 +11,7 @@ export function PendingSubmitButton({
   size,
   name,
   value,
+  title,
 }: {
   idleLabel: string;
   pendingLabel: string;
@@ -25,6 +26,7 @@ export function PendingSubmitButton({
   size?: "sm" | "lg";
   name?: string;
   value?: string;
+  title?: string;
 }) {
   const { pending } = useFormStatus();
   const sizeClass = size ? ` btn--${size}` : "";
@@ -37,6 +39,7 @@ export function PendingSubmitButton({
         value={value}
         disabled={pending}
         className={`btn btn--${variant}${sizeClass}`}
+        title={title}
       >
         {pending ? (
           <>
