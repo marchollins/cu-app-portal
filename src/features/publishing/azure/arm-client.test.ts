@@ -126,6 +126,68 @@ describe("createAzureArmClient", () => {
     );
   });
 
+  it("reads existing web app settings without exposing a missing app as an exception", async () => {
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(
+        json({
+          properties: {
+            EXISTING_CUSTOM_SETTING: "keep-me",
+            NODE_ENV: "production",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(text("not found", { status: 404 }));
+    const client = createAzureArmClient({
+      subscriptionId: "sub",
+      tokenProvider: async () => "token",
+      fetchImpl,
+    });
+
+    await expect(
+      client.getAppSettings({
+        resourceGroup: "rg-cu-apps-published",
+        name: "app-campus-dashboard-clx9abc1",
+      }),
+    ).resolves.toEqual({
+      exists: true,
+      settings: {
+        EXISTING_CUSTOM_SETTING: "keep-me",
+        NODE_ENV: "production",
+      },
+    });
+    await expect(
+      client.getAppSettings({
+        resourceGroup: "rg-cu-apps-published",
+        name: "missing-app",
+      }),
+    ).resolves.toEqual({ exists: false, settings: {} });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://management.azure.com/subscriptions/sub/resourceGroups/rg-cu-apps-published/providers/Microsoft.Web/sites/app-campus-dashboard-clx9abc1/config/appsettings/list?api-version=2023-12-01",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("throws the ARM response status and text when app settings cannot be read", async () => {
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValue(text("forbidden", { status: 403 }));
+    const client = createAzureArmClient({
+      subscriptionId: "sub",
+      tokenProvider: async () => "token",
+      fetchImpl,
+    });
+
+    await expect(
+      client.getAppSettings({
+        resourceGroup: "rg-cu-apps-published",
+        name: "app-campus-dashboard-clx9abc1",
+      }),
+    ).rejects.toThrow("Azure ARM request failed: 403 forbidden");
+  });
+
   it("deletes the app web app and only the selected PostgreSQL database", async () => {
     const fetchImpl = vi
       .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()

@@ -742,6 +742,39 @@ select.form-control {
   margin-top: 1rem;
 }
 
+/* ─── Publishing Setup Status ─── */
+
+.setup-status {
+  margin-top: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-light);
+}
+
+.setup-status__title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--cu-navy);
+  margin: 0 0 0.5rem;
+}
+
+.setup-status p {
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+}
+
+.setup-status__summary {
+  color: var(--text-secondary);
+}
+
+.setup-status__checks {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 1.25rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
 /* ─── Delete Panel ─── */
 
 .delete-panel {

@@ -85,6 +85,14 @@ Deletion behavior:
 - Azure deletion never deletes the shared PostgreSQL flexible server.
 - If a user leaves GitHub or Azure unchecked while deleting the portal record, those resources must be deleted manually later because the portal record will no longer appear in `My Apps`.
 
+#### Publishing setup repair
+
+Repair Publishing Setup refreshes portal-managed GitHub Actions secrets and GitHub OIDC federated credentials for a target app when configured Azure, Entra, or GitHub values rotate. Repair removes or resets only the portal-managed publishing secrets and credentials for that app.
+
+Repair does not delete repositories, dispatch deployment workflows, or delete Azure resources.
+
+If Microsoft Graph returns `Authorization_RequestDenied`, first check whether the configured Azure or Entra credential values expired or rotated. Update those values, then run repair for the affected app. If the current values are valid and Graph still denies writes, grant the portal runtime identity permission to update shared app registration redirect URIs and publisher app federated credentials.
+
 ## Local Development Flow
 
 1. Install dependencies with `npm install`.

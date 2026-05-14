@@ -8,6 +8,7 @@ import {
   publishToAzureAction,
   retryPublishAction,
 } from "@/features/publishing/actions";
+import { repairPublishingSetupAction } from "@/features/publishing/setup/actions";
 import { supportsPostSuccessPushToDeploy } from "@/features/publishing/providers";
 import {
   retryRepositoryBootstrapAction,
@@ -24,10 +25,18 @@ import { prisma } from "@/lib/db";
 
 const PREPARATION_REQUIRED_MESSAGE =
   "Publishing is unavailable until the publishing setup has been applied to your repository.";
+const SETUP_REPAIR_REQUIRED_MESSAGE =
+  "Publishing setup needs to be repaired before you can publish.";
+const SETUP_READY_REQUIRED_MESSAGE =
+  "Publishing setup must be ready before you can publish.";
 
 type BadgeVariant = "success" | "error" | "warning" | "info" | "default";
 
-function statusBadge(status: string): { label: string; variant: BadgeVariant } {
+function statusBadge(
+  status: string | null | undefined,
+): { label: string; variant: BadgeVariant } {
+  if (!status) return { label: "Not checked", variant: "default" };
+
   const s = status.toLowerCase();
   if (
     s === "ready" ||
@@ -38,8 +47,14 @@ function statusBadge(status: string): { label: string; variant: BadgeVariant } {
     return { label: formatStatus(status), variant: "success" };
   }
   if (s === "failed") return { label: "Failed", variant: "error" };
+  if (s === "blocked") return { label: "Blocked", variant: "error" };
+  if (s === "needs_repair") return { label: "Needs repair", variant: "warning" };
+  if (s === "checking" || s === "repairing") {
+    return { label: formatStatus(status), variant: "warning" };
+  }
   if (s === "deleted") return { label: "Deleted", variant: "default" };
   if (s === "not_started") return { label: "Not started", variant: "default" };
+  if (s === "not_checked") return { label: "Not checked", variant: "default" };
   if (s === "invited") return { label: "Invited", variant: "info" };
   return { label: formatStatus(status), variant: "info" };
 }
@@ -78,13 +93,14 @@ function renderActionButton(
   requestId: string,
   repositoryStatus: string,
   publishStatus: string,
+  publishingSetupStatus?: string | null,
   sourceOfTruth?: string,
   preparationStatus?: string | null,
 ) {
   if (repositoryStatus === "DELETED") {
     return (
       <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
-        Repo deleted
+        Repository deleted
       </span>
     );
   }
@@ -106,7 +122,7 @@ function renderActionButton(
   if (repositoryStatus !== "READY") {
     return (
       <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
-        Awaiting repo setup
+        Setting up repository…
       </span>
     );
   }
@@ -115,6 +131,19 @@ function renderActionButton(
     return (
       <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
         {PREPARATION_REQUIRED_MESSAGE}
+      </span>
+    );
+  }
+
+  const setupBlockMessage = getPublishingSetupBlockMessage(
+    sourceOfTruth,
+    publishingSetupStatus,
+  );
+
+  if (setupBlockMessage) {
+    return (
+      <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+        {setupBlockMessage}
       </span>
     );
   }
@@ -194,6 +223,108 @@ function renderPushToDeployButton(request: {
         title="Turn on automatic publishing — your app will deploy to Azure whenever code is updated in the repository, without needing to click Publish"
       />
     </form>
+  );
+}
+
+function needsPublishingSetupRepair(status: string | null | undefined) {
+  return status === "NEEDS_REPAIR";
+}
+
+function isPublishingSetupBlocking(status: string | null | undefined) {
+  return (
+    status === "NEEDS_REPAIR" ||
+    status === "REPAIRING" ||
+    status === "BLOCKED"
+  );
+}
+
+function canPublishWithSetup(
+  sourceOfTruth: string | null | undefined,
+  publishingSetupStatus: string | null | undefined,
+) {
+  const status = publishingSetupStatus ?? "NOT_CHECKED";
+
+  if (sourceOfTruth === "IMPORTED_REPOSITORY") {
+    return status === "READY";
+  }
+
+  return status === "NOT_CHECKED" || status === "READY";
+}
+
+function getPublishingSetupBlockMessage(
+  sourceOfTruth: string | null | undefined,
+  publishingSetupStatus: string | null | undefined,
+) {
+  if (isPublishingSetupBlocking(publishingSetupStatus)) {
+    return SETUP_REPAIR_REQUIRED_MESSAGE;
+  }
+
+  if (!canPublishWithSetup(sourceOfTruth, publishingSetupStatus)) {
+    return SETUP_READY_REQUIRED_MESSAGE;
+  }
+
+  return null;
+}
+
+const CHECK_KEY_LABELS: Record<string, string> = {
+  azure_resource_access: "Azure hosting access",
+  azure_app_settings: "Azure app configuration",
+  entra_redirect_uri: "Login configuration",
+  github_federated_credential: "GitHub publish credential",
+  github_actions_secrets: "GitHub publish secrets",
+  github_workflow_file: "GitHub workflow file",
+  github_workflow_dispatch: "GitHub workflow trigger",
+};
+
+function formatCheckKey(key: string) {
+  return CHECK_KEY_LABELS[key] ?? formatStatus(key);
+}
+
+function renderPublishingSetupStatus(request: {
+  id: string;
+  publishingSetupStatus?: string | null;
+  publishingSetupErrorSummary?: string | null;
+  publishSetupChecks?: Array<{
+    checkKey: string;
+    status: string;
+    message: string;
+  }>;
+}) {
+  const status = request.publishingSetupStatus ?? "NOT_CHECKED";
+  const repairAction = repairPublishingSetupAction.bind(null, request.id);
+
+  return (
+    <section aria-label="Publishing setup status" className="setup-status">
+      <h3 className="setup-status__title">Publishing setup</h3>
+      <p>Status: {formatStatus(status)}</p>
+      {request.publishingSetupErrorSummary ? (
+        <p className="setup-status__summary">
+          {request.publishingSetupErrorSummary}
+        </p>
+      ) : null}
+      {request.publishSetupChecks?.length ? (
+        <ul className="setup-status__checks">
+          {request.publishSetupChecks.map((check) => (
+            <li key={check.checkKey}>
+              {formatCheckKey(check.checkKey)}: {formatStatus(check.status)} —{" "}
+              {check.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {needsPublishingSetupRepair(status) ? (
+        <form action={repairAction}>
+          <PendingSubmitButton
+            idleLabel="Repair Publishing Setup"
+            pendingLabel="Repairing Publishing Setup..."
+            statusText="Refreshing your Azure hosting, Microsoft login, and GitHub publishing settings."
+            variant="primary-solid"
+            size="sm"
+            title="Attempts to automatically fix the publishing configuration so your app can be deployed to Azure"
+          />
+        </form>
+      ) : null}
+    </section>
   );
 }
 
@@ -459,6 +590,10 @@ export default async function MyAppsPage() {
         take: 1,
       },
       repositoryImport: true,
+      publishSetupChecks: {
+        orderBy: { checkedAt: "desc" },
+        take: 7,
+      },
     },
   });
   const currentUser = await prisma.user.findUnique({
@@ -524,6 +659,7 @@ export default async function MyAppsPage() {
             const repoBadge = statusBadge(request.repositoryStatus);
             const pubBadge = statusBadge(request.publishStatus);
             const accessBadge = statusBadge(request.repositoryAccessStatus);
+            const setupBadge = statusBadge(request.publishingSetupStatus);
 
             return (
               <li key={request.id} className="app-card">
@@ -556,6 +692,12 @@ export default async function MyAppsPage() {
                       title="Whether Codex has been invited to your code repository"
                     >
                       Code access: {accessBadge.label}
+                    </span>
+                    <span
+                      className={`badge badge--${setupBadge.variant}`}
+                      title="Whether the publishing configuration (Azure, login, and GitHub credentials) is ready"
+                    >
+                      Pub. config: {setupBadge.label}
                     </span>
                   </div>
 
@@ -676,6 +818,14 @@ export default async function MyAppsPage() {
                     repositoryImport: request.repositoryImport,
                   })}
 
+                  {renderPublishingSetupStatus({
+                    id: request.id,
+                    publishingSetupStatus: request.publishingSetupStatus,
+                    publishingSetupErrorSummary:
+                      request.publishingSetupErrorSummary,
+                    publishSetupChecks: request.publishSetupChecks,
+                  })}
+
                   <div className="app-card__actions">
                     <Link
                       href={`/download/${request.id}`}
@@ -704,6 +854,7 @@ export default async function MyAppsPage() {
                       request.id,
                       request.repositoryStatus,
                       request.publishStatus,
+                      request.publishingSetupStatus,
                       request.sourceOfTruth,
                       request.repositoryImport?.preparationStatus,
                     )}

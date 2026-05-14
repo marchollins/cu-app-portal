@@ -251,7 +251,7 @@ describe("runPublishAttempt", () => {
     });
   });
 
-  it("marks the attempt and request failed when publishing throws", async () => {
+  it("classifies setup failures before deployment dispatch", async () => {
     vi.mocked(prisma.publishAttempt.findUnique).mockResolvedValue({
       id: "attempt-456",
       appRequestId: "request-456",
@@ -259,17 +259,19 @@ describe("runPublishAttempt", () => {
         id: "request-456",
       },
     } as Awaited<ReturnType<typeof prisma.publishAttempt.findUnique>>);
+    const deployRepository = vi.fn();
 
     await expect(
       runPublishAttempt("attempt-456", {
         provisionInfrastructure: vi.fn().mockRejectedValue(
           new Error("azure permission denied"),
         ),
-        deployRepository: vi.fn(),
+        deployRepository,
         verifyDeployment: vi.fn(),
       }),
     ).rejects.toThrow("azure permission denied");
 
+    expect(deployRepository).not.toHaveBeenCalled();
     expect(prisma.publishAttempt.update).toHaveBeenCalledWith({
       where: { id: "attempt-456" },
       data: expect.objectContaining({
@@ -282,7 +284,10 @@ describe("runPublishAttempt", () => {
       where: { id: "request-456" },
       data: {
         publishStatus: "FAILED",
-        publishErrorSummary: "azure permission denied",
+        publishErrorSummary:
+          "Publishing setup failed: Publishing setup needs to be repaired.",
+        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupErrorSummary: "Publishing setup needs to be repaired.",
       },
     });
     expect(consoleError).toHaveBeenCalledWith("[publish-worker]", "failed", {
@@ -290,6 +295,186 @@ describe("runPublishAttempt", () => {
       requestId: "request-456",
       errorSummary: "azure permission denied",
       error: expect.any(Error),
+    });
+  });
+
+  it("classifies deployRepository failures before the dispatch hook runs", async () => {
+    vi.mocked(prisma.publishAttempt.findUnique).mockResolvedValue({
+      id: "attempt-654",
+      appRequestId: "request-654",
+      appRequest: {
+        id: "request-654",
+      },
+    } as Awaited<ReturnType<typeof prisma.publishAttempt.findUnique>>);
+
+    await expect(
+      runPublishAttempt("attempt-654", {
+        provisionInfrastructure: vi.fn().mockResolvedValue({
+          azureResourceGroup: "rg-cu-apps-published",
+          azureAppServicePlan: "asp-cu-apps-published",
+          azureWebAppName: "app-campus-dashboard-clx9abc1",
+          azurePostgresServer: "psql-cu-apps-published",
+          azureDatabaseName: "db_campus_dashboard_clx9abc1",
+          azureDefaultHostName:
+            "app-campus-dashboard-clx9abc1.azurewebsites.net",
+          primaryPublishUrl:
+            "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+        }),
+        deployRepository: vi.fn().mockRejectedValue(
+          new Error("github secret write denied"),
+        ),
+        verifyDeployment: vi.fn(),
+      }),
+    ).rejects.toThrow("github secret write denied");
+
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-654" },
+      data: {
+        publishStatus: "FAILED",
+        publishErrorSummary:
+          "Publishing setup failed: Publishing setup needs to be repaired.",
+        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupErrorSummary: "Publishing setup needs to be repaired.",
+      },
+    });
+  });
+
+  it("uses deploy setup step context when classifying pre-dispatch Graph failures", async () => {
+    vi.mocked(prisma.publishAttempt.findUnique).mockResolvedValue({
+      id: "attempt-655",
+      appRequestId: "request-655",
+      appRequest: {
+        id: "request-655",
+      },
+    } as Awaited<ReturnType<typeof prisma.publishAttempt.findUnique>>);
+    const graph403 = new Error(
+      'Microsoft Graph request failed: 403 {"error":{"code":"Authorization_RequestDenied","message":"Insufficient privileges to complete the operation.","innerError":{"request-id":"graph-request-456"}}}',
+    );
+
+    await expect(
+      runPublishAttempt("attempt-655", {
+        provisionInfrastructure: vi.fn().mockResolvedValue({
+          azureResourceGroup: "rg-cu-apps-published",
+          azureAppServicePlan: "asp-cu-apps-published",
+          azureWebAppName: "app-campus-dashboard-clx9abc1",
+          azurePostgresServer: "psql-cu-apps-published",
+          azureDatabaseName: "db_campus_dashboard_clx9abc1",
+          azureDefaultHostName:
+            "app-campus-dashboard-clx9abc1.azurewebsites.net",
+          primaryPublishUrl:
+            "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+        }),
+        deployRepository: vi
+          .fn()
+          .mockImplementation(async (_appRequestId, options) => {
+            options?.onSetupStep?.("github_federated_credential");
+            throw graph403;
+          }),
+        verifyDeployment: vi.fn(),
+      }),
+    ).rejects.toThrow("Microsoft Graph request failed: 403");
+
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-655" },
+      data: {
+        publishStatus: "FAILED",
+        publishErrorSummary:
+          "Publishing setup failed: Publishing credentials are out of date and need to be refreshed.",
+        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupErrorSummary:
+          "Publishing credentials are out of date and need to be refreshed.",
+      },
+    });
+  });
+
+  it("does not classify failures after deployment dispatch", async () => {
+    vi.mocked(prisma.publishAttempt.findUnique).mockResolvedValue({
+      id: "attempt-789",
+      appRequestId: "request-789",
+      appRequest: {
+        id: "request-789",
+      },
+    } as Awaited<ReturnType<typeof prisma.publishAttempt.findUnique>>);
+
+    await expect(
+      runPublishAttempt("attempt-789", {
+        provisionInfrastructure: vi.fn().mockResolvedValue({
+          azureResourceGroup: "rg-cu-apps-published",
+          azureAppServicePlan: "asp-cu-apps-published",
+          azureWebAppName: "app-campus-dashboard-clx9abc1",
+          azurePostgresServer: "psql-cu-apps-published",
+          azureDatabaseName: "db_campus_dashboard_clx9abc1",
+          azureDefaultHostName:
+            "app-campus-dashboard-clx9abc1.azurewebsites.net",
+          primaryPublishUrl:
+            "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+        }),
+        deployRepository: vi
+          .fn()
+          .mockImplementation(async (_appRequestId, options) => {
+            options?.onWorkflowDispatched?.();
+
+            return {
+              publishUrl:
+                "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+              githubWorkflowRunId: "123456789",
+              githubWorkflowRunUrl:
+                "https://github.com/cedarville-it/campus-dashboard/actions/runs/123456789",
+            };
+          }),
+        verifyDeployment: vi.fn().mockRejectedValue(
+          new Error("deployment unhealthy"),
+        ),
+      }),
+    ).rejects.toThrow("deployment unhealthy");
+
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-789" },
+      data: {
+        publishStatus: "FAILED",
+        publishErrorSummary: "deployment unhealthy",
+      },
+    });
+  });
+
+  it("does not classify deployRepository failures after the dispatch hook runs", async () => {
+    vi.mocked(prisma.publishAttempt.findUnique).mockResolvedValue({
+      id: "attempt-987",
+      appRequestId: "request-987",
+      appRequest: {
+        id: "request-987",
+      },
+    } as Awaited<ReturnType<typeof prisma.publishAttempt.findUnique>>);
+
+    await expect(
+      runPublishAttempt("attempt-987", {
+        provisionInfrastructure: vi.fn().mockResolvedValue({
+          azureResourceGroup: "rg-cu-apps-published",
+          azureAppServicePlan: "asp-cu-apps-published",
+          azureWebAppName: "app-campus-dashboard-clx9abc1",
+          azurePostgresServer: "psql-cu-apps-published",
+          azureDatabaseName: "db_campus_dashboard_clx9abc1",
+          azureDefaultHostName:
+            "app-campus-dashboard-clx9abc1.azurewebsites.net",
+          primaryPublishUrl:
+            "https://app-campus-dashboard-clx9abc1.azurewebsites.net",
+        }),
+        deployRepository: vi
+          .fn()
+          .mockImplementation(async (_appRequestId, options) => {
+            options?.onWorkflowDispatched?.();
+            throw new Error("workflow run was not detected");
+          }),
+        verifyDeployment: vi.fn(),
+      }),
+    ).rejects.toThrow("workflow run was not detected");
+
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "request-987" },
+      data: {
+        publishStatus: "FAILED",
+        publishErrorSummary: "workflow run was not detected",
+      },
     });
   });
 
@@ -335,7 +520,10 @@ describe("runPublishAttempt", () => {
       where: { id: "request-123" },
       data: {
         publishStatus: "FAILED",
-        publishErrorSummary: "missing azure config",
+        publishErrorSummary:
+          "Publishing setup failed: Publishing setup needs to be repaired.",
+        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupErrorSummary: "Publishing setup needs to be repaired.",
       },
     });
     expect(recordAuditEvent).toHaveBeenCalledWith("PUBLISH_FAILED", {

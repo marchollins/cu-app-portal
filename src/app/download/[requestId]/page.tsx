@@ -6,6 +6,7 @@ import {
   publishToAzureAction,
   retryPublishAction,
 } from "@/features/publishing/actions";
+import { repairPublishingSetupAction } from "@/features/publishing/setup/actions";
 import {
   retryRepositoryBootstrapAction,
   saveGitHubUsernameAndGrantAccessAction,
@@ -49,6 +50,10 @@ function getDisplayPublishUrl(
 
 const PREPARATION_REQUIRED_MESSAGE =
   "Publishing is unavailable until the publishing setup has been applied to your repository.";
+const SETUP_REPAIR_REQUIRED_MESSAGE =
+  "Publishing setup needs to be repaired before you can publish.";
+const SETUP_READY_REQUIRED_MESSAGE =
+  "Publishing setup must be ready before you can publish.";
 
 function isImportedRepositoryPrepared(
   sourceOfTruth: string,
@@ -56,6 +61,108 @@ function isImportedRepositoryPrepared(
 ) {
   return (
     sourceOfTruth !== "IMPORTED_REPOSITORY" || preparationStatus === "COMMITTED"
+  );
+}
+
+function needsPublishingSetupRepair(status: string | null | undefined) {
+  return status === "NEEDS_REPAIR";
+}
+
+function isPublishingSetupBlocking(status: string | null | undefined) {
+  return (
+    status === "NEEDS_REPAIR" ||
+    status === "REPAIRING" ||
+    status === "BLOCKED"
+  );
+}
+
+function canPublishWithSetup(
+  sourceOfTruth: string | null | undefined,
+  publishingSetupStatus: string | null | undefined,
+) {
+  const status = publishingSetupStatus ?? "NOT_CHECKED";
+
+  if (sourceOfTruth === "IMPORTED_REPOSITORY") {
+    return status === "READY";
+  }
+
+  return status === "NOT_CHECKED" || status === "READY";
+}
+
+function getPublishingSetupBlockMessage(
+  sourceOfTruth: string | null | undefined,
+  publishingSetupStatus: string | null | undefined,
+) {
+  if (isPublishingSetupBlocking(publishingSetupStatus)) {
+    return SETUP_REPAIR_REQUIRED_MESSAGE;
+  }
+
+  if (!canPublishWithSetup(sourceOfTruth, publishingSetupStatus)) {
+    return SETUP_READY_REQUIRED_MESSAGE;
+  }
+
+  return null;
+}
+
+const CHECK_KEY_LABELS: Record<string, string> = {
+  azure_resource_access: "Azure hosting access",
+  azure_app_settings: "Azure app configuration",
+  entra_redirect_uri: "Login configuration",
+  github_federated_credential: "GitHub publish credential",
+  github_actions_secrets: "GitHub publish secrets",
+  github_workflow_file: "GitHub workflow file",
+  github_workflow_dispatch: "GitHub workflow trigger",
+};
+
+function formatCheckKey(key: string) {
+  return CHECK_KEY_LABELS[key] ?? formatStatus(key);
+}
+
+function renderPublishingSetupStatus(request: {
+  id: string;
+  publishingSetupStatus?: string | null;
+  publishingSetupErrorSummary?: string | null;
+  publishSetupChecks?: Array<{
+    checkKey: string;
+    status: string;
+    message: string;
+  }>;
+}) {
+  const status = request.publishingSetupStatus ?? "NOT_CHECKED";
+  const repairAction = repairPublishingSetupAction.bind(null, request.id);
+
+  return (
+    <section aria-label="Publishing setup status" className="setup-status">
+      <h3 className="setup-status__title">Publishing setup</h3>
+      <p>Status: {formatStatus(status)}</p>
+      {request.publishingSetupErrorSummary ? (
+        <p className="setup-status__summary">
+          {request.publishingSetupErrorSummary}
+        </p>
+      ) : null}
+      {request.publishSetupChecks?.length ? (
+        <ul className="setup-status__checks">
+          {request.publishSetupChecks.map((check) => (
+            <li key={check.checkKey}>
+              {formatCheckKey(check.checkKey)}: {formatStatus(check.status)} —{" "}
+              {check.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {needsPublishingSetupRepair(status) ? (
+        <form action={repairAction}>
+          <PendingSubmitButton
+            idleLabel="Repair Publishing Setup"
+            pendingLabel="Repairing Publishing Setup..."
+            statusText="Refreshing your Azure hosting, Microsoft login, and GitHub publishing settings."
+            variant="primary-solid"
+            size="sm"
+            title="Attempts to automatically fix the publishing configuration so your app can be deployed to Azure"
+          />
+        </form>
+      ) : null}
+    </section>
   );
 }
 
@@ -263,12 +370,14 @@ function renderPublishAction({
   repositoryStatus,
   sourceOfTruth,
   preparationStatus,
+  publishingSetupStatus,
 }: {
   requestId: string;
   publishStatus: string;
   repositoryStatus: string;
   sourceOfTruth: string;
   preparationStatus: string | null | undefined;
+  publishingSetupStatus: string | null | undefined;
 }) {
   if (repositoryStatus === "FAILED") {
     const retryAction = retryRepositoryBootstrapAction.bind(null, requestId);
@@ -288,6 +397,19 @@ function renderPublishAction({
 
   if (!isImportedRepositoryPrepared(sourceOfTruth, preparationStatus)) {
     return <p>{PREPARATION_REQUIRED_MESSAGE}</p>;
+  }
+
+  const setupBlockMessage = getPublishingSetupBlockMessage(
+    sourceOfTruth,
+    publishingSetupStatus,
+  );
+
+  if (setupBlockMessage) {
+    return (
+      <p style={{ color: "var(--text-secondary)", fontSize: "0.9375rem" }}>
+        {setupBlockMessage}
+      </p>
+    );
   }
 
   if (publishStatus === "FAILED") {
@@ -346,6 +468,10 @@ export default async function DownloadPage({
         take: 1,
       },
       repositoryImport: true,
+      publishSetupChecks: {
+        orderBy: { checkedAt: "desc" },
+        take: 7,
+      },
     },
   });
 
@@ -664,12 +790,20 @@ export default async function DownloadPage({
             </div>
           ) : null}
 
+          {renderPublishingSetupStatus({
+            id: appRequest.id,
+            publishingSetupStatus: appRequest.publishingSetupStatus,
+            publishingSetupErrorSummary: appRequest.publishingSetupErrorSummary,
+            publishSetupChecks: appRequest.publishSetupChecks,
+          })}
+
           {renderPublishAction({
             requestId,
             publishStatus: appRequest.publishStatus,
             repositoryStatus: appRequest.repositoryStatus,
             sourceOfTruth: appRequest.sourceOfTruth,
             preparationStatus: appRequest.repositoryImport?.preparationStatus,
+            publishingSetupStatus: appRequest.publishingSetupStatus,
           })}
         </div>
 

@@ -14,6 +14,17 @@ import {
 } from "./workflow-triggers";
 
 type QueueablePublishStatus = "NOT_STARTED" | "SUCCEEDED" | "FAILED";
+type QueueablePublishingSetupStatus = "NOT_CHECKED" | "READY";
+
+const BLOCKING_SETUP_STATUSES = new Set([
+  "NEEDS_REPAIR",
+  "REPAIRING",
+  "BLOCKED",
+]);
+const GENERATED_APP_QUEUEABLE_SETUP_STATUSES: QueueablePublishingSetupStatus[] = [
+  "NOT_CHECKED",
+  "READY",
+];
 
 async function loadOwnedAppRequest(requestId: string) {
   const userId = await resolveCurrentUserId();
@@ -94,6 +105,16 @@ function createGitHubClientForOwner(owner: string) {
   });
 }
 
+function publishingSetupStatusPredicate(appRequest: {
+  sourceOfTruth?: string | null;
+}) {
+  if (appRequest.sourceOfTruth === "IMPORTED_REPOSITORY") {
+    return "READY";
+  }
+
+  return { in: GENERATED_APP_QUEUEABLE_SETUP_STATUSES };
+}
+
 async function queuePublishAttempt(
   requestId: string,
   allowedStatuses: QueueablePublishStatus[],
@@ -102,6 +123,10 @@ async function queuePublishAttempt(
 
   if (appRequest.repositoryStatus !== "READY") {
     throw new Error("Managed repository is not ready for publishing.");
+  }
+
+  if (BLOCKING_SETUP_STATUSES.has(appRequest.publishingSetupStatus)) {
+    throw new Error("Publishing setup must be repaired before publishing.");
   }
 
   if (
@@ -113,12 +138,22 @@ async function queuePublishAttempt(
     );
   }
 
+  if (
+    appRequest.sourceOfTruth === "IMPORTED_REPOSITORY" &&
+    appRequest.publishingSetupStatus !== "READY"
+  ) {
+    throw new Error(
+      "Imported app publishing setup must be ready before publishing.",
+    );
+  }
+
   const attemptId = await prisma.$transaction(async (tx) => {
     const queuedRequest = await tx.appRequest.updateMany({
       where: {
         id: requestId,
         userId: appRequest.userId,
         repositoryStatus: "READY",
+        publishingSetupStatus: publishingSetupStatusPredicate(appRequest),
         publishStatus: { in: allowedStatuses },
       },
       data: {

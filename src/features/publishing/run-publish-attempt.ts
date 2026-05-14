@@ -7,6 +7,10 @@ import { createAzureArmClient } from "./azure/arm-client";
 import { loadAzurePublishConfig } from "./azure/config";
 import { createMicrosoftGraphClient } from "./azure/graph-client";
 import { createAzurePublishRuntime } from "./azure/runtime";
+import {
+  classifyPublishingSetupError,
+  type PublishingSetupCheckKey,
+} from "./setup/status";
 
 export type ProvisionedPublishTarget = {
   azureResourceGroup: string;
@@ -24,6 +28,11 @@ export type DeploymentRun = {
   githubWorkflowRunUrl: string;
 };
 
+export type DeployRepositoryOptions = {
+  onSetupStep?: (step: PublishingSetupCheckKey) => void;
+  onWorkflowDispatched?: () => void;
+};
+
 export type VerificationResult = {
   verifiedAt: Date;
 };
@@ -32,7 +41,10 @@ export type PublishRuntime = {
   provisionInfrastructure: (
     appRequestId: string,
   ) => Promise<ProvisionedPublishTarget>;
-  deployRepository: (appRequestId: string) => Promise<DeploymentRun>;
+  deployRepository: (
+    appRequestId: string,
+    options?: DeployRepositoryOptions,
+  ) => Promise<DeploymentRun>;
   verifyDeployment: (publishUrl: string) => Promise<VerificationResult>;
 };
 
@@ -125,6 +137,9 @@ export async function runPublishAttempt(
     requestId: attempt.appRequestId,
   });
 
+  let deploymentDispatchMayHaveStarted = false;
+  let currentSetupStep: PublishingSetupCheckKey = "azure_resource_access";
+
   try {
     const effectiveRuntime = runtime ?? createDefaultRuntime();
 
@@ -171,6 +186,14 @@ export async function runPublishAttempt(
 
     const deployment = await effectiveRuntime.deployRepository(
       attempt.appRequestId,
+      {
+        onSetupStep: (step) => {
+          currentSetupStep = step;
+        },
+        onWorkflowDispatched: () => {
+          deploymentDispatchMayHaveStarted = true;
+        },
+      },
     );
 
     logPublishWorker("deployment completed", {
@@ -249,6 +272,23 @@ export async function runPublishAttempt(
   } catch (error) {
     const errorSummary =
       error instanceof Error ? error.message : "Unknown publish error";
+    const setupFailure = deploymentDispatchMayHaveStarted
+      ? null
+      : classifyPublishingSetupError({
+          step: currentSetupStep,
+          error,
+        });
+    const appRequestFailureData = setupFailure
+      ? {
+          publishStatus: "FAILED" as const,
+          publishErrorSummary: `Publishing setup failed: ${setupFailure.summary}`,
+          publishingSetupStatus: setupFailure.setupStatus,
+          publishingSetupErrorSummary: setupFailure.summary,
+        }
+      : {
+          publishStatus: "FAILED" as const,
+          publishErrorSummary: errorSummary,
+        };
     const finishedAt = new Date();
 
     console.error("[publish-worker]", "failed", {
@@ -270,10 +310,7 @@ export async function runPublishAttempt(
 
     await prisma.appRequest.update({
       where: { id: attempt.appRequestId },
-      data: {
-        publishStatus: "FAILED",
-        publishErrorSummary: errorSummary,
-      },
+      data: appRequestFailureData,
     });
 
     await recordAuditEvent("PUBLISH_FAILED", {

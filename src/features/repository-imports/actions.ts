@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { resolveCurrentUserId } from "@/features/app-requests/current-user";
+import { preflightPublishingSetup } from "@/features/publishing/setup/service";
 import { loadGitHubAppConfig } from "@/features/repositories/config";
 import { createGitHubAppClient } from "@/features/repositories/github-app";
 import { recordAuditEvent } from "@/lib/audit";
@@ -211,6 +212,27 @@ async function resolveRepository(
 
 function summarizeError(error: unknown) {
   return error instanceof Error ? error.message : "unknown";
+}
+
+function summarizePublishingSetupPreflightError(error: unknown) {
+  return error instanceof Error && error.message
+    ? error.message
+    : "Publishing setup preflight failed.";
+}
+
+async function runPublishingSetupPreflightBestEffort(requestId: string) {
+  try {
+    await preflightPublishingSetup(requestId);
+  } catch (error) {
+    await prisma.appRequest.update({
+      where: { id: requestId },
+      data: {
+        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupErrorSummary:
+          summarizePublishingSetupPreflightError(error),
+      },
+    });
+  }
 }
 
 function isPublishingFileConflictError(error: unknown) {
@@ -515,6 +537,10 @@ export async function prepareExistingAppAction(
         pullRequestUrl: result.pullRequestUrl,
       },
     );
+
+    if (result.status === "COMMITTED") {
+      await runPublishingSetupPreflightBestEffort(requestId);
+    }
   } catch (error) {
     const isPublishingConflict = isPublishingFileConflictError(error);
     const message = isPublishingConflict
@@ -634,6 +660,8 @@ export async function verifyExistingAppPreparationAction(
     requestId,
     targetRepository: `${appRequest.repositoryOwner}/${appRequest.repositoryName}`,
   });
+
+  await runPublishingSetupPreflightBestEffort(requestId);
 
   revalidateImportedRepositoryViews(requestId);
 }

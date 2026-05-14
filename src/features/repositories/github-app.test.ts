@@ -15,6 +15,14 @@ function createJsonResponse(body: unknown, init?: ResponseInit) {
   });
 }
 
+const json = createJsonResponse;
+const { privateKey: testPrivateKey } = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+});
+const TEST_PRIVATE_KEY = testPrivateKey
+  .export({ type: "pkcs8", format: "pem" })
+  .toString();
+
 describe("createGitHubAppClient", () => {
   it("returns an installation token for authenticated git remotes", async () => {
     const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -211,6 +219,67 @@ describe("createGitHubAppClient", () => {
       key_id: "key-id-123",
       encrypted_value: expect.any(String),
     });
+  });
+
+  it("deletes an actions secret and treats missing secrets as already removed", async () => {
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(json({ token: "installation-token" }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(json({ token: "installation-token" }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    const client = createGitHubAppClient({
+      appId: "123",
+      privateKey: TEST_PRIVATE_KEY,
+      installationId: "456",
+      fetchImpl,
+    });
+
+    await client.deleteActionsSecret({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      secretName: "AZURE_CLIENT_ID",
+    });
+    await client.deleteActionsSecret({
+      owner: "cedarville-it",
+      name: "campus-dashboard",
+      secretName: "AZURE_CLIENT_ID",
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://api.github.com/repos/cedarville-it/campus-dashboard/actions/secrets/AZURE_CLIENT_ID",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("checks whether an actions secret exists by name", async () => {
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(json({ token: "installation-token" }))
+      .mockResolvedValueOnce(json({ name: "AZURE_CLIENT_ID" }))
+      .mockResolvedValueOnce(json({ token: "installation-token" }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    const client = createGitHubAppClient({
+      appId: "123",
+      privateKey: TEST_PRIVATE_KEY,
+      installationId: "456",
+      fetchImpl,
+    });
+
+    await expect(
+      client.getActionsSecret({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        secretName: "AZURE_CLIENT_ID",
+      }),
+    ).resolves.toEqual({ exists: true });
+    await expect(
+      client.getActionsSecret({
+        owner: "cedarville-it",
+        name: "campus-dashboard",
+        secretName: "AZURE_TENANT_ID",
+      }),
+    ).resolves.toEqual({ exists: false });
   });
 
   it("encodes actions secret path segments", async () => {

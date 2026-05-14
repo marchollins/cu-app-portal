@@ -240,6 +240,80 @@ describe("createAzurePublishRuntime", () => {
     });
   });
 
+  it("invokes the workflow dispatched hook after dispatch succeeds", async () => {
+    const onWorkflowDispatched = vi.fn();
+    const getLatestWorkflowRun = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "old",
+        url: "https://github.com/org/repo/actions/runs/old",
+      })
+      .mockResolvedValueOnce({
+        id: "new",
+        url: "https://github.com/org/repo/actions/runs/new",
+      });
+    const { deps, github } = createDeps({ getLatestWorkflowRun });
+    const runtime = createAzurePublishRuntime(deps);
+
+    await runtime.deployRepository("clx9abc123zzzzzzzzzz", {
+      onWorkflowDispatched,
+    });
+
+    expect(onWorkflowDispatched).toHaveBeenCalledOnce();
+    expect(github.dispatchWorkflow.mock.invocationCallOrder[0]).toBeLessThan(
+      onWorkflowDispatched.mock.invocationCallOrder[0],
+    );
+    expect(onWorkflowDispatched.mock.invocationCallOrder[0]).toBeLessThan(
+      getLatestWorkflowRun.mock.invocationCallOrder[1],
+    );
+  });
+
+  it("reports setup-sensitive deploy steps before dispatch", async () => {
+    const setupSteps: string[] = [];
+    const onSetupStep = vi.fn((step: string) => setupSteps.push(step));
+    const { deps, graph, github } = createDeps();
+    const runtime = createAzurePublishRuntime(deps);
+
+    await runtime.deployRepository("clx9abc123zzzzzzzzzz", {
+      onSetupStep,
+    });
+
+    expect(setupSteps).toEqual([
+      "github_federated_credential",
+      "github_actions_secrets",
+    ]);
+    expect(onSetupStep.mock.invocationCallOrder[0]).toBeLessThan(
+      graph.ensureFederatedCredential.mock.invocationCallOrder[0],
+    );
+    expect(onSetupStep.mock.invocationCallOrder[1]).toBeLessThan(
+      github.setActionsSecret.mock.invocationCallOrder[0],
+    );
+    expect(onSetupStep.mock.invocationCallOrder[1]).toBeLessThan(
+      github.dispatchWorkflow.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not invoke the workflow dispatched hook when pre-dispatch setup fails", async () => {
+    const onWorkflowDispatched = vi.fn();
+    const onSetupStep = vi.fn();
+    const { deps, graph, github } = createDeps();
+    graph.ensureFederatedCredential.mockRejectedValue(
+      new Error("federated credential denied"),
+    );
+    const runtime = createAzurePublishRuntime(deps);
+
+    await expect(
+      runtime.deployRepository("clx9abc123zzzzzzzzzz", {
+        onWorkflowDispatched,
+        onSetupStep,
+      }),
+    ).rejects.toThrow("federated credential denied");
+
+    expect(onSetupStep).toHaveBeenCalledWith("github_federated_credential");
+    expect(onWorkflowDispatched).not.toHaveBeenCalled();
+    expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+  });
+
   it("waits when a dispatched workflow run is not visible yet", async () => {
     const sleep = vi.fn().mockResolvedValue(undefined);
     const getLatestWorkflowRun = vi
