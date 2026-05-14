@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 import type {
+  DeployRepositoryOptions,
   DeploymentRun,
   ProvisionedPublishTarget,
   PublishRuntime,
@@ -353,7 +354,10 @@ export function createAzurePublishRuntime(deps: RuntimeDeps): PublishRuntime {
         primaryPublishUrl,
       };
     },
-    async deployRepository(appRequestId: string): Promise<DeploymentRun> {
+    async deployRepository(
+      appRequestId: string,
+      options?: DeployRepositoryOptions,
+    ): Promise<DeploymentRun> {
       const appRequest = await loadPublishableRequest(deps, appRequestId);
       const names = buildPublishTargetNames({
         requestId: appRequest.id,
@@ -409,6 +413,7 @@ export function createAzurePublishRuntime(deps: RuntimeDeps): PublishRuntime {
         workflowFileName: WORKFLOW_FILE_NAME,
         ref: branch,
       });
+      options?.onWorkflowDispatched?.();
       const run = await waitForNewWorkflowRun(
         workflowRunInput,
         previousRun?.id ?? null,

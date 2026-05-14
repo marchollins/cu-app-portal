@@ -25,6 +25,10 @@ export type DeploymentRun = {
   githubWorkflowRunUrl: string;
 };
 
+export type DeployRepositoryOptions = {
+  onWorkflowDispatched?: () => void;
+};
+
 export type VerificationResult = {
   verifiedAt: Date;
 };
@@ -33,7 +37,10 @@ export type PublishRuntime = {
   provisionInfrastructure: (
     appRequestId: string,
   ) => Promise<ProvisionedPublishTarget>;
-  deployRepository: (appRequestId: string) => Promise<DeploymentRun>;
+  deployRepository: (
+    appRequestId: string,
+    options?: DeployRepositoryOptions,
+  ) => Promise<DeploymentRun>;
   verifyDeployment: (publishUrl: string) => Promise<VerificationResult>;
 };
 
@@ -172,9 +179,13 @@ export async function runPublishAttempt(
       requestId: attempt.appRequestId,
     });
 
-    deploymentDispatchMayHaveStarted = true;
     const deployment = await effectiveRuntime.deployRepository(
       attempt.appRequestId,
+      {
+        onWorkflowDispatched: () => {
+          deploymentDispatchMayHaveStarted = true;
+        },
+      },
     );
 
     logPublishWorker("deployment completed", {
