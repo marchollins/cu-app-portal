@@ -483,7 +483,7 @@ function checkWorkflowDispatch({
   workflow: string | null;
   branch: string;
 }) {
-  if (workflow?.includes("workflow_dispatch:")) {
+  if (workflow && hasTopLevelWorkflowDispatchTrigger(workflow)) {
     return pass(
       "github_workflow_dispatch",
       "Workflow dispatch can be attempted from the default branch.",
@@ -496,6 +496,102 @@ function checkWorkflowDispatch({
     "Workflow dispatch readiness could not be verified.",
     { workflowPath: WORKFLOW_PATH, branch, repairable: true },
   );
+}
+
+function countIndent(line: string) {
+  return line.match(/^\s*/)?.[0].length ?? 0;
+}
+
+function stripYamlComment(line: string) {
+  let quote: "'" | '"' | null = null;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const previous = line[index - 1];
+
+    if ((char === "'" || char === '"') && previous !== "\\") {
+      quote = quote === char ? null : quote ?? char;
+    }
+
+    if (char === "#" && !quote && (index === 0 || /\s/.test(previous))) {
+      return line.slice(0, index);
+    }
+  }
+
+  return line;
+}
+
+function inlineOnValueHasWorkflowDispatch(value: string) {
+  const trimmed = value.trim();
+
+  if (trimmed === "workflow_dispatch") {
+    return true;
+  }
+
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    return trimmed
+      .slice(1, -1)
+      .split(",")
+      .some(
+        (item) =>
+          item.trim().replace(/^["']|["']$/g, "") === "workflow_dispatch",
+      );
+  }
+
+  return false;
+}
+
+function hasTopLevelWorkflowDispatchTrigger(workflow: string) {
+  const lines = workflow.split(/\r?\n/);
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = stripYamlComment(lines[index]);
+
+    if (!line.trim()) {
+      continue;
+    }
+
+    if (countIndent(line) !== 0) {
+      continue;
+    }
+
+    const onMatch = line.match(/^on\s*:\s*(.*)$/);
+
+    if (!onMatch) {
+      continue;
+    }
+
+    if (inlineOnValueHasWorkflowDispatch(onMatch[1])) {
+      return true;
+    }
+
+    if (onMatch[1].trim()) {
+      return false;
+    }
+
+    for (let nestedIndex = index + 1; nestedIndex < lines.length; nestedIndex += 1) {
+      const nestedLine = stripYamlComment(lines[nestedIndex]);
+      const trimmed = nestedLine.trim();
+
+      if (!trimmed) {
+        continue;
+      }
+
+      const indent = countIndent(nestedLine);
+
+      if (indent === 0) {
+        return false;
+      }
+
+      if (/^workflow_dispatch\s*:?\s*$/.test(trimmed)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  return false;
 }
 
 async function runPreflightChecks(

@@ -228,6 +228,76 @@ describe("publishing setup service", () => {
     );
   });
 
+  it.each([
+    ["inline scalar", "name: Deploy\non: workflow_dispatch\n"],
+    ["inline sequence", "name: Deploy\non: [workflow_dispatch, push]\n"],
+    [
+      "indented mapping",
+      "name: Deploy\non:\n  workflow_dispatch:\n  push:\n    branches: [main]\n",
+    ],
+    ["indented scalar", "name: Deploy\non:\n  workflow_dispatch\n"],
+  ])("accepts top-level workflow dispatch trigger via %s", async (_label, workflow) => {
+    const baseDeps = createDeps();
+    const deps = createDeps({
+      github: {
+        ...baseDeps.github,
+        readRepositoryTextFiles: vi.fn().mockResolvedValue({
+          ".github/workflows/deploy-azure-app-service.yml": workflow,
+        }),
+      },
+    });
+
+    await preflightPublishingSetup("req_123", deps);
+
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "req_123" },
+      data: expect.objectContaining({
+        publishingSetupStatus: "READY",
+        publishingSetupErrorSummary: null,
+      }),
+    });
+  });
+
+  it.each([
+    [
+      "commented trigger",
+      "name: Deploy\non:\n  push:\n    branches: [main]\n# workflow_dispatch:\n",
+    ],
+    [
+      "nested job env",
+      "name: Deploy\non:\n  push:\n    branches: [main]\njobs:\n  deploy:\n    env:\n      EVENT_NAME: workflow_dispatch:\n",
+    ],
+  ])("does not accept %s as workflow dispatch proof", async (_label, workflow) => {
+    const baseDeps = createDeps();
+    const deps = createDeps({
+      github: {
+        ...baseDeps.github,
+        readRepositoryTextFiles: vi.fn().mockResolvedValue({
+          ".github/workflows/deploy-azure-app-service.yml": workflow,
+        }),
+      },
+    });
+
+    await preflightPublishingSetup("req_123", deps);
+
+    expect(prisma.appRequest.update).toHaveBeenCalledWith({
+      where: { id: "req_123" },
+      data: expect.objectContaining({
+        publishingSetupStatus: "NEEDS_REPAIR",
+        publishingSetupErrorSummary:
+          "Workflow dispatch readiness could not be verified.",
+      }),
+    });
+    expect(prisma.publishSetupCheck.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          checkKey: "github_workflow_dispatch",
+          status: "UNKNOWN",
+        }),
+      }),
+    );
+  });
+
   it("repairs setup without dispatching a deployment workflow", async () => {
     const deps = createDeps();
 
