@@ -779,6 +779,8 @@ describe("repository import actions", () => {
       }),
     });
     expect(preflightPublishingSetup).toHaveBeenCalledWith("req_123");
+    expect(revalidatePath).toHaveBeenCalledWith("/apps");
+    expect(revalidatePath).toHaveBeenCalledWith("/download/req_123");
   });
 
   it("retries a failed imported app preparation", async () => {
@@ -900,6 +902,9 @@ describe("repository import actions", () => {
     });
     expect(revalidatePath).toHaveBeenCalledWith("/apps");
     expect(revalidatePath).toHaveBeenCalledWith("/download/req_preflight_failed");
+    expect(
+      vi.mocked(prisma.appRequest.update).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(revalidatePath).mock.invocationCallOrder[0]);
   });
 
   it("records publishing-file conflicts as blocked feedback without throwing", async () => {
@@ -1220,6 +1225,8 @@ describe("repository import actions", () => {
       },
     );
     expect(preflightPublishingSetup).toHaveBeenCalledWith("req_verify");
+    expect(revalidatePath).toHaveBeenCalledWith("/apps");
+    expect(revalidatePath).toHaveBeenCalledWith("/download/req_verify");
   });
 
   it("marks publishing setup as needing repair when verification preflight fails", async () => {
@@ -1277,6 +1284,9 @@ describe("repository import actions", () => {
     expect(revalidatePath).toHaveBeenCalledWith(
       "/download/req_verify_preflight_failed",
     );
+    expect(
+      vi.mocked(prisma.appRequest.update).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(revalidatePath).mock.invocationCallOrder[0]);
   });
 
   it("marks conflict-blocked repositories committed when required publishing files reach the default branch", async () => {
