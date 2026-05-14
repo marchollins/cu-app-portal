@@ -47,6 +47,18 @@ type SetActionsSecretInput = {
   secretValue: string;
 };
 
+type GetActionsSecretInput = {
+  owner: string;
+  name: string;
+  secretName: string;
+};
+
+type DeleteActionsSecretInput = {
+  owner: string;
+  name: string;
+  secretName: string;
+};
+
 type DispatchWorkflowInput = {
   owner: string;
   name: string;
@@ -148,6 +160,10 @@ type GitHubRefResponse = {
 type GitHubActionsPublicKeyResponse = {
   key_id: string;
   key: string;
+};
+
+type GitHubActionsSecretResponse = {
+  name: string;
 };
 
 type GitHubWorkflowRunsResponse = {
@@ -804,6 +820,44 @@ export function createGitHubAppClient({
       );
 
       await requireGitHubStatus(response, [201, 204]);
+    },
+    async getActionsSecret({
+      owner,
+      name,
+      secretName,
+    }: GetActionsSecretInput) {
+      const headers = await withInstallationHeaders();
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${githubPathSegment(owner)}/${githubPathSegment(name)}/actions/secrets/${githubPathSegment(secretName)}`,
+        {
+          method: "GET",
+          headers,
+        },
+      );
+
+      if (response.status === 404) {
+        return { exists: false as const };
+      }
+
+      await readJson<GitHubActionsSecretResponse>(response);
+
+      return { exists: true as const };
+    },
+    async deleteActionsSecret({
+      owner,
+      name,
+      secretName,
+    }: DeleteActionsSecretInput) {
+      const headers = await withInstallationHeaders();
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${githubPathSegment(owner)}/${githubPathSegment(name)}/actions/secrets/${githubPathSegment(secretName)}`,
+        {
+          method: "DELETE",
+          headers,
+        },
+      );
+
+      await requireGitHubStatus(response, [204, 404]);
     },
     async dispatchWorkflow({
       owner,

@@ -110,6 +110,66 @@ describe("createMicrosoftGraphClient", () => {
     );
   });
 
+  it("replaces a federated credential by name", async () => {
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(
+        json({
+          value: [{ id: "credential-id", name: "github-campus-dashboard" }],
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(json({ id: "new-credential-id" }, { status: 201 }));
+    const client = createMicrosoftGraphClient({
+      tokenProvider: async () => "token",
+      fetchImpl,
+    });
+
+    await client.replaceFederatedCredential({
+      applicationAppId: "client-id",
+      name: "github-campus-dashboard",
+      repository: "cedarville-it/campus-dashboard",
+      branch: "main",
+    });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://graph.microsoft.com/v1.0/applications(appId='client-id')/federatedIdentityCredentials/credential-id",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      3,
+      "https://graph.microsoft.com/v1.0/applications(appId='client-id')/federatedIdentityCredentials",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("checks whether a redirect uri exists", async () => {
+    const fetchImpl = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValueOnce(
+        json({
+          web: {
+            redirectUris: [
+              "https://app-campus-dashboard.azurewebsites.net/api/auth/callback/microsoft-entra-id",
+            ],
+          },
+        }),
+      );
+    const client = createMicrosoftGraphClient({
+      tokenProvider: async () => "token",
+      fetchImpl,
+    });
+
+    await expect(
+      client.hasRedirectUri({
+        applicationObjectId: "app-object-id",
+        redirectUri:
+          "https://app-campus-dashboard.azurewebsites.net/api/auth/callback/microsoft-entra-id",
+      }),
+    ).resolves.toEqual({ exists: true });
+  });
+
   it("treats an existing federated credential as already configured", async () => {
     const fetchImpl = vi
       .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
