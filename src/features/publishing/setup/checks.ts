@@ -2,39 +2,31 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { PublishingSetupCheckResult } from "./status";
 
-const SECRET_METADATA_KEYS = new Set([
-  "secret",
-  "secretvalue",
-  "token",
-  "accesstoken",
-  "refreshtoken",
-  "clientsecret",
-  "privatekey",
-  "signingkey",
-  "apikey",
-  "password",
-  "credentials",
-  "rawcredentials",
-  "connectionstring",
-  "databaseurl",
-]);
-
-const SAFE_SENSITIVE_IDENTIFIER_KEYS = new Set([
+const SAFE_METADATA_KEYS = new Set([
+  "branch",
   "credentialid",
   "credentialname",
+  "databasename",
+  "defaultbranch",
+  "errorcode",
+  "exists",
+  "missingsecretnames",
+  "name",
+  "owner",
+  "path",
+  "redirecturi",
+  "repairable",
+  "repository",
+  "requestid",
+  "resourcegroup",
   "secretname",
   "secretnames",
+  "statuscode",
+  "step",
+  "subject",
+  "webappname",
+  "workflowpath",
 ]);
-
-const SECRET_METADATA_KEY_PARTS = [
-  "secret",
-  "token",
-  "password",
-  "credential",
-  "key",
-  "connectionstring",
-  "databaseurl",
-];
 
 type PersistPublishingSetupChecksInput = {
   appRequestId: string;
@@ -42,22 +34,13 @@ type PersistPublishingSetupChecksInput = {
   checkedAt: Date;
 };
 
-function isSecretMetadataKey(key: string) {
-  const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-  if (SAFE_SENSITIVE_IDENTIFIER_KEYS.has(normalizedKey)) {
-    return false;
-  }
-
-  return (
-    SECRET_METADATA_KEYS.has(normalizedKey) ||
-    SECRET_METADATA_KEY_PARTS.some((part) => normalizedKey.includes(part))
-  );
+function normalizeMetadataKey(key: string) {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function sanitizeJsonValue(value: unknown): Prisma.InputJsonValue | undefined {
   if (value === null) {
-    return null;
+    return undefined;
   }
 
   if (
@@ -73,14 +56,16 @@ function sanitizeJsonValue(value: unknown): Prisma.InputJsonValue | undefined {
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeJsonValue(item) ?? null);
+    return value
+      .map((item) => sanitizeJsonValue(item))
+      .filter((item): item is Prisma.InputJsonValue => item !== undefined);
   }
 
   if (typeof value === "object") {
-    const sanitized: Prisma.InputJsonObject = {};
+    const sanitized: Record<string, Prisma.InputJsonValue> = {};
 
     for (const [key, nestedValue] of Object.entries(value)) {
-      if (isSecretMetadataKey(key)) {
+      if (!SAFE_METADATA_KEYS.has(normalizeMetadataKey(key))) {
         continue;
       }
 
@@ -101,11 +86,11 @@ function sanitizeMetadata(metadata: unknown): Prisma.InputJsonObject {
   const sanitized = sanitizeJsonValue(metadata);
 
   if (
-    sanitized !== null &&
     typeof sanitized === "object" &&
+    sanitized !== null &&
     !Array.isArray(sanitized)
   ) {
-    return sanitized;
+    return sanitized as Prisma.InputJsonObject;
   }
 
   return {};
@@ -116,7 +101,7 @@ export async function persistPublishingSetupChecks({
   checks,
   checkedAt,
 }: PersistPublishingSetupChecksInput) {
-  await Promise.all(
+  await prisma.$transaction(
     checks.map((check) => {
       const metadata = sanitizeMetadata(check.metadata);
 
