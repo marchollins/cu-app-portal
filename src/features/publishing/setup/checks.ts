@@ -43,7 +43,7 @@ type PersistPublishingSetupChecksInput = {
 };
 
 function isSecretMetadataKey(key: string) {
-  const normalizedKey = key.toLowerCase();
+  const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, "");
 
   if (SAFE_SENSITIVE_IDENTIFIER_KEYS.has(normalizedKey)) {
     return false;
